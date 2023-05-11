@@ -59,6 +59,12 @@ impl From<CStrConvertError> for Error {
 /// end.
 ///
 /// Used for interoperability with kernel APIs that take C strings.
+///
+/// # Invariants
+///
+/// - `!self.0.is_empty()`,
+/// - `self.0.last() == Some(b'\0')`,
+/// - `self.0.iter().filter(|c| c == b'\0').count() == 1`,
 #[repr(transparent)]
 pub struct CStr([u8]);
 
@@ -72,10 +78,10 @@ impl CStr {
     /// Returns the length of this string with `NUL`.
     #[inline]
     pub const fn len_with_nul(&self) -> usize {
-        // SAFETY: This is one of the invariant of `CStr`.
         // We add a `unreachable_unchecked` here to hint the optimizer that
         // the value returned from this function is non-zero.
         if self.0.is_empty() {
+            // SAFETY: `!self.0.is_empty()` by TI,
             unsafe { core::hint::unreachable_unchecked() };
         }
         self.0.len()
@@ -91,18 +97,23 @@ impl CStr {
     ///
     /// # Safety
     ///
-    /// `ptr` must be a valid pointer to a `NUL`-terminated C string, and it must
-    /// last at least `'a`. When `CStr` is alive, the memory pointed by `ptr`
-    /// must not be mutated.
+    /// - `EX $end: usize` where `$end = min{i. *(ptr.offset(i)) == b'\0'}`,
+    /// - `ptr` is R-valid[..=$end] for `'a`,
+    /// - while RET is alive uphold `*ptr[..=$end]` is not mutated,
     #[inline]
     pub unsafe fn from_char_ptr<'a>(ptr: *const core::ffi::c_char) -> &'a Self {
-        // SAFETY: The safety precondition guarantees `ptr` is a valid pointer
-        // to a `NUL`-terminated C string.
+        // SAFETY:
+        /// - `ptr` is R-valid[..=$end] by FR,
         let len = unsafe { bindings::strlen(ptr) } + 1;
-        // SAFETY: Lifetime guaranteed by the safety precondition.
+        // SAFETY:
+        // - `ptr` is R-valid[..=$end] for `'a` by FR,
+        // - `len = $end` by above,
+        // - while `bytes` is alive `*ptr[..=$end]` is not mutated by FR & use of `bytes`,
         let bytes = unsafe { core::slice::from_raw_parts(ptr as _, len as _) };
-        // SAFETY: As `len` is returned by `strlen`, `bytes` does not contain interior `NUL`.
-        // As we have added 1 to `len`, the last byte is known to be `NUL`.
+        // SAFETY:
+        // - `len != 0` by DEF,
+        // - `bytes.last() == Some(b'\0')` by FG of `strlen` & DEF of `bytes`,
+        // - `bytes.iter().filter(|c| c == b'\0').count() == 1` by FG of `strlen` & DEF of `bytes`,
         unsafe { Self::from_bytes_with_nul_unchecked(bytes) }
     }
 
@@ -114,6 +125,7 @@ impl CStr {
         if bytes.is_empty() {
             return Err(CStrConvertError::NotNulTerminated);
         }
+        // CHECK: nul_term
         if bytes[bytes.len() - 1] != 0 {
             return Err(CStrConvertError::NotNulTerminated);
         }
@@ -126,7 +138,9 @@ impl CStr {
             }
             i += 1;
         }
-        // SAFETY: We just checked that all properties hold.
+        // SAFETY:
+        // - `bytes.last() == Some(b'\0')` by check `nul_term`,
+        // - `bytes.iter().filter(|c| c == b'\0').count() == 1` by check above,
         Ok(unsafe { Self::from_bytes_with_nul_unchecked(bytes) })
     }
 
@@ -135,11 +149,14 @@ impl CStr {
     ///
     /// # Safety
     ///
-    /// `bytes` *must* end with a `NUL` byte, and should only have a single
-    /// `NUL` byte (or the string will be truncated).
+    /// - `!bytes.is_empty()`,
+    /// - `bytes.last() == Some(b'\0')`,
+    /// - `bytes.iter().filter(|c| c == b'\0').count() == 1`,
     #[inline]
     pub const unsafe fn from_bytes_with_nul_unchecked(bytes: &[u8]) -> &CStr {
-        // SAFETY: Properties of `bytes` guaranteed by the safety precondition.
+        // SAFETY:
+        // - `CStr([u8])` is `repr(transparent)`,
+        // INVARIANT: .. by FR,
         unsafe { core::mem::transmute(bytes) }
     }
 
@@ -184,7 +201,7 @@ impl CStr {
     ///
     /// # Safety
     ///
-    /// The contents must be valid UTF-8.
+    /// - `self.as_bytes()` is valid UTF-8,
     ///
     /// # Examples
     ///
@@ -198,6 +215,7 @@ impl CStr {
     /// ```
     #[inline]
     pub unsafe fn as_str_unchecked(&self) -> &str {
+        // SAFETY: .. by FR,
         unsafe { core::str::from_utf8_unchecked(self.as_bytes()) }
     }
 
@@ -290,8 +308,12 @@ impl Index<ops::RangeFrom<usize>> for CStr {
         // Delegate bounds checking to slice.
         // Assign to _ to mute clippy's unnecessary operation warning.
         let _ = &self.as_bytes()[index.start..];
-        // SAFETY: We just checked the bounds.
-        unsafe { Self::from_bytes_with_nul_unchecked(&self.0[index.start..]) }
+        let slice = &self.0[index.start..];
+        // SAFETY:
+        // - `!slice.is_empty()` by check above,
+        // - `slice.last() == Some(b'\0')` by TI & DEF of `slice`,
+        // - `slice.iter().filter(|c| c == b'\0').count() = 1` by TI & DEF of `slice`,
+        unsafe { Self::from_bytes_with_nul_unchecked(slice) }
     }
 }
 
