@@ -90,7 +90,7 @@ pub mod code {
 ///
 /// # Invariants
 ///
-/// The value is a valid `errno` (i.e. `>= -MAX_ERRNO && < 0`).
+/// - `self.0 in -MAX_ERRNO..0`
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Error(core::ffi::c_int);
 
@@ -118,10 +118,9 @@ impl Error {
     ///
     /// # Safety
     ///
-    /// `errno` must be within error code range (i.e. `>= -MAX_ERRNO && < 0`).
+    /// - `errno in -MAX_ERRNO..0`
     unsafe fn from_errno_unchecked(errno: core::ffi::c_int) -> Error {
-        // INVARIANT: The contract ensures the type invariant
-        // will hold.
+        // INVARIANT: .. by FR,
         Error(errno)
     }
 
@@ -133,7 +132,7 @@ impl Error {
     /// Returns the error encoded as a pointer.
     #[allow(dead_code)]
     pub(crate) fn to_ptr<T>(self) -> *mut T {
-        // SAFETY: self.0 is a valid error due to its invariant.
+        // SAFETY: `self.0 in -MAX_ERRNO..0` by TI,
         unsafe { bindings::ERR_PTR(self.0.into()) as *mut _ }
     }
 
@@ -276,23 +275,18 @@ pub fn to_result(err: core::ffi::c_int) -> Result {
 // TODO: Remove `dead_code` marker once an in-kernel client is available.
 #[allow(dead_code)]
 pub(crate) fn from_err_ptr<T>(ptr: *mut T) -> Result<*mut T> {
-    // CAST: Casting a pointer to `*const core::ffi::c_void` is always valid.
     let const_ptr: *const core::ffi::c_void = ptr.cast();
-    // SAFETY: The FFI function does not deref the pointer.
+    // SAFETY: <nothing>,
     if unsafe { bindings::IS_ERR(const_ptr) } {
-        // SAFETY: The FFI function does not deref the pointer.
+        // SAFETY: `IS_ERR(const_ptr) == true` by above,
         let err = unsafe { bindings::PTR_ERR(const_ptr) };
-        // CAST: If `IS_ERR()` returns `true`,
-        // then `PTR_ERR()` is guaranteed to return a
-        // negative value greater-or-equal to `-bindings::MAX_ERRNO`,
-        // which always fits in an `i16`, as per the invariant above.
-        // And an `i16` always fits in an `i32`. So casting `err` to
-        // an `i32` can never overflow, and is always valid.
-        //
-        // SAFETY: `IS_ERR()` ensures `err` is a
-        // negative value greater-or-equal to `-bindings::MAX_ERRNO`.
+        // CAST:
+        // - `err in -MAX_ERRNO..0` by FG of `PTR_ERR` & DEF of `err`,
+        // - `-MAX_ERRNO > c_int::MIN` by DEF of `MAX_ERRNO`,
+        let err = err as core::ffi::c_int;
+        // SAFETY: `err in -MAX_ERRNO..0` by FG of `PTR_ERR` & DEF of `err`,
         #[allow(clippy::unnecessary_cast)]
-        return Err(unsafe { Error::from_errno_unchecked(err as core::ffi::c_int) });
+        return Err(unsafe { Error::from_errno_unchecked(err) });
     }
     Ok(ptr)
 }
