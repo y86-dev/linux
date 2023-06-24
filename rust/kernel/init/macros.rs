@@ -1037,14 +1037,18 @@ macro_rules! __init_internal {
                     // We use unreachable code to ensure that all fields have been mentioned exactly
                     // once, this struct initializer will still be type-checked and complain with a
                     // very natural error message if a field is forgotten/mentioned more than once.
-                    #[allow(unreachable_code, clippy::diverging_sub_expression)]
+                    #[allow(unreachable_code,
+                            clippy::diverging_sub_expression,
+                            clippy::redundant_closure_call)]
                     if false {
-                        $crate::__init_internal!(make_initializer:
-                            @slot(slot),
-                            @type_name($t),
-                            @munch_fields($($fields)*,),
-                            @acc(),
-                        );
+                        (|| {
+                            $crate::__init_internal!(make_initializer:
+                                @slot(slot),
+                                @type_name($t),
+                                @munch_fields($($fields)*,),
+                                @acc(),
+                            );
+                        })();
                     }
                 }
                 Ok(__InitOk)
