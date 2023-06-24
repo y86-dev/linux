@@ -12,7 +12,7 @@ mod pinned_drop;
 mod vtable;
 mod zeroable;
 
-use proc_macro::TokenStream;
+use proc_macro::{Group, TokenStream, TokenTree};
 
 /// Declares a kernel module.
 ///
@@ -265,4 +265,19 @@ pub fn pinned_drop(args: TokenStream, input: TokenStream) -> TokenStream {
 #[proc_macro_derive(Zeroable)]
 pub fn derive_zeroable(input: TokenStream) -> TokenStream {
     zeroable::derive(input)
+}
+
+/// Does not modify the given TokenStream, but removes any declarative macro information.
+#[proc_macro]
+pub fn retokenize(input: TokenStream) -> TokenStream {
+    fn id(tt: TokenTree) -> TokenTree {
+        match tt {
+            TokenTree::Group(g) => TokenTree::Group(Group::new(
+                g.delimiter(),
+                g.stream().into_iter().map(id).collect(),
+            )),
+            x => x,
+        }
+    }
+    input.into_iter().map(id).collect()
 }
