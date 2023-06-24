@@ -992,7 +992,6 @@ macro_rules! __pin_data {
 /// - `init_slot`: recursively creates the code that initializes all fields in `slot`.
 /// - `make_initializer`: recursively create the struct initializer that guarantees that every
 ///   field has been initialized exactly once.
-/// - `forget_guards`: recursively forget the drop guards for every field.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __init_internal {
@@ -1032,6 +1031,7 @@ macro_rules! __init_internal {
                     $crate::__init_internal!(init_slot($($use_data)?):
                         @data(data),
                         @slot(slot),
+                        @guards(),
                         @munch_fields($($fields)*,),
                     );
                     // We use unreachable code to ensure that all fields have been mentioned exactly
@@ -1046,10 +1046,6 @@ macro_rules! __init_internal {
                             @acc(),
                         );
                     }
-                    // Forget all guards, since initialization was a success.
-                    $crate::__init_internal!(forget_guards:
-                        @munch_fields($($fields)*,),
-                    );
                 }
                 Ok(__InitOk)
             }
@@ -1063,13 +1059,17 @@ macro_rules! __init_internal {
     (init_slot($($use_data:ident)?):
         @data($data:ident),
         @slot($slot:ident),
+        @guards($($guards:ident,)*),
         @munch_fields($(,)?),
     ) => {
-        // Endpoint of munching, no fields are left.
+        // Endpoint of munching, no fields are left. If execution reaches this point, all fields
+        // have been initialized. Therefore we can now dismiss the guards by forgetting them.
+        $(::core::mem::forget($guards);)*
     };
     (init_slot($use_data:ident): // use_data is present, so we use the `data` to init fields.
         @data($data:ident),
         @slot($slot:ident),
+        @guards($($guards:ident,)*),
         // In-place initialization syntax.
         @munch_fields($field:ident <- $val:expr, $($rest:tt)*),
     ) => {
@@ -1080,24 +1080,26 @@ macro_rules! __init_internal {
         // return when an error/panic occurs.
         // We also use the `data` to require the correct trait (`Init` or `PinInit`) for `$field`.
         unsafe { $data.$field(::core::ptr::addr_of_mut!((*$slot).$field), $field)? };
-        // Create the drop guard.
+        // Create the drop guard:
         //
-        // We only give access to `&DropGuard`, so it cannot be forgotten via safe code.
+        // We rely on macro hygiene to make it impossible for users to access this local variable.
         //
         // SAFETY: We forget the guard later when initialization has succeeded.
-        let $field = &unsafe {
+        let guard = unsafe {
             $crate::init::__internal::DropGuard::new(::core::ptr::addr_of_mut!((*$slot).$field))
         };
 
         $crate::__init_internal!(init_slot($use_data):
             @data($data),
             @slot($slot),
+            @guards(guard, $($guards,)*),
             @munch_fields($($rest)*),
         );
     };
     (init_slot(): // no use_data, so we use `Init::__init` directly.
         @data($data:ident),
         @slot($slot:ident),
+        @guards($($guards:ident,)*),
         // In-place initialization syntax.
         @munch_fields($field:ident <- $val:expr, $($rest:tt)*),
     ) => {
@@ -1107,24 +1109,26 @@ macro_rules! __init_internal {
         // SAFETY: `slot` is valid, because we are inside of an initializer closure, we
         // return when an error/panic occurs.
         unsafe { $crate::init::Init::__init($field, ::core::ptr::addr_of_mut!((*$slot).$field))? };
-        // Create the drop guard.
+        // Create the drop guard:
         //
-        // We only give access to `&DropGuard`, so it cannot be forgotten via safe code.
+        // We rely on macro hygiene to make it impossible for users to access this local variable.
         //
         // SAFETY: We forget the guard later when initialization has succeeded.
-        let $field = &unsafe {
+        let guard = unsafe {
             $crate::init::__internal::DropGuard::new(::core::ptr::addr_of_mut!((*$slot).$field))
         };
 
         $crate::__init_internal!(init_slot():
             @data($data),
             @slot($slot),
+            @guards(guard, $($guards,)*),
             @munch_fields($($rest)*),
         );
     };
     (init_slot($($use_data:ident)?):
         @data($data:ident),
         @slot($slot:ident),
+        @guards($($guards:ident,)*),
         // Init by-value.
         @munch_fields($field:ident $(: $val:expr)?, $($rest:tt)*),
     ) => {
@@ -1135,16 +1139,17 @@ macro_rules! __init_internal {
         unsafe { ::core::ptr::write(::core::ptr::addr_of_mut!((*$slot).$field), $field) };
         // Create the drop guard:
         //
-        // We only give access to `&DropGuard`, so it cannot be accidentally forgotten.
+        // We rely on macro hygiene to make it impossible for users to access this local variable.
         //
         // SAFETY: We forget the guard later when initialization has succeeded.
-        let $field = &unsafe {
+        let guard = unsafe {
             $crate::init::__internal::DropGuard::new(::core::ptr::addr_of_mut!((*$slot).$field))
         };
 
         $crate::__init_internal!(init_slot($($use_data)?):
             @data($data),
             @slot($slot),
+            @guards(guard, $($guards,)*),
             @munch_fields($($rest)*),
         );
     };
@@ -1187,29 +1192,6 @@ macro_rules! __init_internal {
             @type_name($t),
             @munch_fields($($rest)*),
             @acc($($acc)* $field: ::core::panic!(),),
-        );
-    };
-    (forget_guards:
-        @munch_fields($(,)?),
-    ) => {
-        // Munching finished.
-    };
-    (forget_guards:
-        @munch_fields($field:ident <- $val:expr, $($rest:tt)*),
-    ) => {
-        unsafe { $crate::init::__internal::DropGuard::forget($field) };
-
-        $crate::__init_internal!(forget_guards:
-            @munch_fields($($rest)*),
-        );
-    };
-    (forget_guards:
-        @munch_fields($field:ident $(: $val:expr)?, $($rest:tt)*),
-    ) => {
-        unsafe { $crate::init::__internal::DropGuard::forget($field) };
-
-        $crate::__init_internal!(forget_guards:
-            @munch_fields($($rest)*),
         );
     };
 }
