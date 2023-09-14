@@ -37,4 +37,14 @@ config SAMPLE_RUST_HOSTPROGS
 
 	  If unsure, say N.
 
+config SAMPLE_RUST_COUNTING
+	tristate "Rust Counting"
+	help
+	  This option builds the Rust counting sample.
+
+	  To compile this as a module, choose M here:
+	  the module will be called rust_counting.
+
+	  If unsure, say N.
+
 endif # SAMPLES_RUST
