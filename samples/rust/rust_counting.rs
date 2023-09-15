@@ -4,7 +4,7 @@
 
 //! Rust counting example for Kangrejos
 
-use kernel::{new_mutex, prelude::*, sync::Mutex};
+use kernel::{init, new_mutex, prelude::*, sync::Mutex};
 
 module! {
     type: RustCounting,
@@ -43,6 +43,35 @@ impl NamedCounter {
 
     fn set_max(&self, max_value: i32) {
         self.value.lock().1 = max_value;
+    }
+}
+
+#[pin_data]
+struct MonitoredBuffer {
+    #[pin]
+    read: NamedCounter,
+    #[pin]
+    write: NamedCounter,
+    buf: Box<[u8; 100_000]>,
+}
+
+impl MonitoredBuffer {
+    fn new() -> impl PinInit<Self> {
+        pin_init!(Self {
+            read <- NamedCounter::new("Read Counter", 0, i32::MAX),
+            write <- NamedCounter::new("Write Counter", 0, i32::MAX),
+            buf: Box::new([0; 100_000]),
+        })
+    }
+
+    fn set(&mut self, idx: usize, val: u8) {
+        self.write.increment();
+        self.buf[idx] = val;
+    }
+
+    fn get(&self, idx: usize) -> u8 {
+        self.read.increment();
+        self.buf[idx]
     }
 }
 
