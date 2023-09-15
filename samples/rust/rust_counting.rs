@@ -56,11 +56,11 @@ struct MonitoredBuffer {
 }
 
 impl MonitoredBuffer {
-    fn new() -> impl PinInit<Self> {
-        pin_init!(Self {
+    fn new() -> impl PinInit<Self, Error> {
+        try_pin_init!(Self {
             read <- NamedCounter::new("Read Counter", 0, i32::MAX),
             write <- NamedCounter::new("Write Counter", 0, i32::MAX),
-            buf: Box::new([0; 100_000]),
+            buf: Box::try_new([0; 100_000])?,
         })
     }
 
