@@ -60,7 +60,7 @@ impl MonitoredBuffer {
         try_pin_init!(Self {
             read <- NamedCounter::new("Read Counter", 0, i32::MAX),
             write <- NamedCounter::new("Write Counter", 0, i32::MAX),
-            buf: Box::try_new([0; 100_000])?,
+            buf: Box::init(init::zeroed())?,
         })
     }
 
