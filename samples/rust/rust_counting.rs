@@ -75,8 +75,23 @@ impl MonitoredBuffer {
     }
 }
 
+#[derive(Zeroable, Debug)]
+struct LotsOfData {
+    a_buf: [u8; 128],
+    b_buf: [u8; 256],
+    mode: i32,
+    count: usize,
+    data: *mut u8,
+    len: usize,
+}
+
 impl kernel::Module for RustCounting {
     fn init(_module: &'static ThisModule) -> Result<Self> {
+        let data = Box::init(init!(LotsOfData {
+            mode: 8,
+            ..Zeroable::zeroed()
+        }));
+        pr_info!("{data:?}");
         Ok(Self)
     }
 }
