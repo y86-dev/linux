@@ -4,7 +4,12 @@
 
 //! Rust counting example for Kangrejos
 
-use kernel::{init, new_mutex, prelude::*, sync::Mutex};
+use kernel::{
+    init::{self, PinnedDrop},
+    new_mutex,
+    prelude::*,
+    sync::Mutex,
+};
 
 module! {
     type: RustCounting,
@@ -46,7 +51,7 @@ impl NamedCounter {
     }
 }
 
-#[pin_data]
+#[pin_data(PinnedDrop)]
 struct MonitoredBuffer {
     #[pin]
     read: NamedCounter,
@@ -72,6 +77,17 @@ impl MonitoredBuffer {
     fn get(&self, idx: usize) -> u8 {
         self.read.increment();
         self.buf[idx]
+    }
+}
+
+#[pinned_drop]
+impl PinnedDrop for MonitoredBuffer {
+    fn drop(self: Pin<&mut Self>) {
+        pr_info!(
+            "Monitored Buffer was read {} times and written to {} times.",
+            self.read.value(),
+            self.write.value()
+        )
     }
 }
 
