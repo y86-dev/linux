@@ -4,7 +4,12 @@
 
 //! Rust counting example for Kangrejos
 
-use kernel::{new_mutex, prelude::*, sync::Mutex};
+use kernel::{
+    init::{self, PinnedDrop},
+    new_mutex,
+    prelude::*,
+    sync::Mutex,
+};
 
 module! {
     type: RustCounting,
@@ -46,8 +51,63 @@ impl NamedCounter {
     }
 }
 
+#[pin_data(PinnedDrop)]
+struct MonitoredBuffer {
+    #[pin]
+    read: NamedCounter,
+    #[pin]
+    write: NamedCounter,
+    buf: Box<[u8; 100_000]>,
+}
+
+impl MonitoredBuffer {
+    fn new() -> impl PinInit<Self, Error> {
+        try_pin_init!(Self {
+            read <- NamedCounter::new("Read Counter", 0, i32::MAX),
+            write <- NamedCounter::new("Write Counter", 0, i32::MAX),
+            buf: Box::init(init::zeroed())?,
+        })
+    }
+
+    fn set(&mut self, idx: usize, val: u8) {
+        self.write.increment();
+        self.buf[idx] = val;
+    }
+
+    fn get(&self, idx: usize) -> u8 {
+        self.read.increment();
+        self.buf[idx]
+    }
+}
+
+#[pinned_drop]
+impl PinnedDrop for MonitoredBuffer {
+    fn drop(self: Pin<&mut Self>) {
+        pr_info!(
+            "Monitored Buffer was read {} times and written to {} times.",
+            self.read.value(),
+            self.write.value()
+        )
+    }
+}
+
+#[derive(Zeroable, Debug)]
+struct LotsOfData {
+    a_buf: [u8; 128],
+    b_buf: [u8; 256],
+    mode: i32,
+    count: usize,
+    data: *mut u8,
+    len: usize,
+}
+
 impl kernel::Module for RustCounting {
     fn init(_module: &'static ThisModule) -> Result<Self> {
+        let data = Box::init(init!(LotsOfData {
+            mode: 8,
+            ..Zeroable::zeroed()
+        }));
+        pr_info!("{data:?}");
         Ok(Self)
     }
 }
