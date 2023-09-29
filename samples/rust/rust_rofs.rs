@@ -2,6 +2,7 @@
 
 //! Rust read-only file system sample.
 
+use kernel::fs::sb;
 use kernel::prelude::*;
 use kernel::{c_str, fs};
 
@@ -16,4 +17,9 @@ kernel::module_fs! {
 struct RoFs;
 impl fs::FileSystem for RoFs {
     const NAME: &'static CStr = c_str!("rust_rofs");
+
+    fn fill_super(sb: &mut sb::SuperBlock<Self>) -> Result {
+        sb.set_magic(0x52555354);
+        Ok(())
+    }
 }

@@ -12,6 +12,7 @@
 #include <linux/ethtool.h>
 #include <linux/file.h>
 #include <linux/fs.h>
+#include <linux/fs_context.h>
 #include <linux/jiffies.h>
 #include <linux/mdio.h>
 #include <linux/phy.h>
@@ -32,3 +33,7 @@ const gfp_t RUST_CONST_HELPER___GFP_ZERO = __GFP_ZERO;
 
 const slab_flags_t RUST_CONST_HELPER_SLAB_RECLAIM_ACCOUNT = SLAB_RECLAIM_ACCOUNT;
 const slab_flags_t RUST_CONST_HELPER_SLAB_ACCOUNT = SLAB_ACCOUNT;
+
+const unsigned long RUST_CONST_HELPER_SB_RDONLY = SB_RDONLY;
+
+const loff_t RUST_CONST_HELPER_MAX_LFS_FILESIZE = MAX_LFS_FILESIZE;
