@@ -33,6 +33,7 @@ pub mod init;
 pub mod ioctl;
 #[cfg(CONFIG_KUNIT)]
 pub mod kunit;
+pub mod mem_cache;
 #[cfg(CONFIG_NET)]
 pub mod net;
 pub mod prelude;
