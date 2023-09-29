@@ -6,9 +6,12 @@
 //!
 //! C headers: [`include/linux/fs.h`](srctree/include/linux/fs.h)
 
+use super::inode::{self, INode, Ino};
 use super::FileSystem;
-use crate::{bindings, types::Opaque};
-use core::marker::PhantomData;
+use crate::bindings;
+use crate::error::{code::*, Result};
+use crate::types::{ARef, Either, Opaque};
+use core::{marker::PhantomData, ptr};
 
 /// A file system super block.
 ///
@@ -59,5 +62,46 @@ impl<T: FileSystem + ?Sized> SuperBlock<T> {
         // fields.
         unsafe { (*self.0.get()).s_magic = magic as core::ffi::c_ulong };
         self
+    }
+
+    /// Tries to get an existing inode or create a new one if it doesn't exist yet.
+    pub fn get_or_create_inode(&self, ino: Ino) -> Result<Either<ARef<INode<T>>, inode::New<T>>> {
+        // SAFETY: All superblock-related state needed by `iget_locked` is initialised by C code
+        // before calling `fill_super_callback`, or by `fill_super_callback` itself before calling
+        // `super_params`, which is the first function to see a new superblock.
+        let inode =
+            ptr::NonNull::new(unsafe { bindings::iget_locked(self.0.get(), ino) }).ok_or(ENOMEM)?;
+
+        // SAFETY: `inode` is a valid pointer returned by `iget_locked`.
+        unsafe { bindings::spin_lock(ptr::addr_of_mut!((*inode.as_ptr()).i_lock)) };
+
+        // SAFETY: `inode` is valid and was locked by the previous lock.
+        let state = unsafe { *ptr::addr_of!((*inode.as_ptr()).i_state) };
+
+        // SAFETY: `inode` is a valid pointer returned by `iget_locked`.
+        unsafe { bindings::spin_unlock(ptr::addr_of_mut!((*inode.as_ptr()).i_lock)) };
+
+        if state & u64::from(bindings::I_NEW) == 0 {
+            // The inode is cached. Just return it.
+            //
+            // SAFETY: `inode` had its refcount incremented by `iget_locked`; this increment is now
+            // owned by `ARef`.
+            Ok(Either::Left(unsafe { ARef::from_raw(inode.cast()) }))
+        } else {
+            // SAFETY: The new inode is valid but not fully initialised yet, so it's ok to create a
+            // `inode::New`.
+            Ok(Either::Right(inode::New(inode, PhantomData)))
+        }
+    }
+
+    /// Creates an inode with the given inode number.
+    ///
+    /// Fails with `EEXIST` if an inode with the given number already exists.
+    pub fn create_inode(&self, ino: Ino) -> Result<inode::New<T>> {
+        if let Either::Right(new) = self.get_or_create_inode(ino)? {
+            Ok(new)
+        } else {
+            Err(EEXIST)
+        }
     }
 }
