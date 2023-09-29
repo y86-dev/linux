@@ -20,6 +20,19 @@ pub struct SuperBlock<T: FileSystem + ?Sized>(
 );
 
 impl<T: FileSystem + ?Sized> SuperBlock<T> {
+    /// Creates a new superblock reference from the given raw pointer.
+    ///
+    /// # Safety
+    ///
+    /// Callers must ensure that:
+    ///
+    /// * `ptr` is valid and remains so for the lifetime of the returned object.
+    /// * `ptr` has the correct file system type, or `T` is [`super::UnspecifiedFS`].
+    pub(crate) unsafe fn from_raw<'a>(ptr: *mut bindings::super_block) -> &'a Self {
+        // SAFETY: The safety requirements guarantee that the cast below is ok.
+        unsafe { &*ptr.cast::<Self>() }
+    }
+
     /// Creates a new superblock mutable reference from the given raw pointer.
     ///
     /// # Safety
@@ -27,7 +40,7 @@ impl<T: FileSystem + ?Sized> SuperBlock<T> {
     /// Callers must ensure that:
     ///
     /// * `ptr` is valid and remains so for the lifetime of the returned object.
-    /// * `ptr` has the correct file system type.
+    /// * `ptr` has the correct file system type, or `T` is [`super::UnspecifiedFS`].
     /// * `ptr` is the only active pointer to the superblock.
     pub(crate) unsafe fn from_raw_mut<'a>(ptr: *mut bindings::super_block) -> &'a mut Self {
         // SAFETY: The safety requirements guarantee that the cast below is ok.

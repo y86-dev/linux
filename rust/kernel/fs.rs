@@ -13,6 +13,7 @@ use core::{ffi, marker::PhantomData, pin::Pin};
 use macros::{pin_data, pinned_drop};
 use sb::SuperBlock;
 
+pub mod inode;
 pub mod sb;
 
 /// The offset of a file in a file system.
@@ -28,8 +29,27 @@ pub trait FileSystem {
     /// The name of the file system type.
     const NAME: &'static CStr;
 
+    /// Determines if an implementation doesn't specify the required types.
+    ///
+    /// This is meant for internal use only.
+    #[doc(hidden)]
+    const IS_UNSPECIFIED: bool = false;
+
     /// Initialises the new superblock.
     fn fill_super(sb: &mut SuperBlock<Self>) -> Result;
+}
+
+/// A file system that is unspecified.
+///
+/// Attempting to get super-block or inode data from it will result in a build error.
+pub struct UnspecifiedFS;
+
+impl FileSystem for UnspecifiedFS {
+    const NAME: &'static CStr = crate::c_str!("unspecified");
+    const IS_UNSPECIFIED: bool = true;
+    fn fill_super(_: &mut SuperBlock<Self>) -> Result {
+        Err(ENOTSUPP)
+    }
 }
 
 /// A registration of a file system.

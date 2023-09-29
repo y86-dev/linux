@@ -5,6 +5,7 @@
 //! C headers: [`include/linux/blk_types.h`](../../include/linux/blk_types.h)
 
 use crate::bindings;
+use crate::fs::inode::INode;
 use crate::types::Opaque;
 
 /// The type used for indexing onto a disc or disc partition.
@@ -34,5 +35,13 @@ impl Device {
     pub(crate) unsafe fn from_raw<'a>(ptr: *mut bindings::block_device) -> &'a Self {
         // SAFETY: The safety requirements guarantee that the cast below is ok.
         unsafe { &*ptr.cast::<Self>() }
+    }
+
+    /// Returns the inode associated with this block device.
+    pub fn inode(&self) -> &INode {
+        // SAFETY: `bd_inode` is never reassigned.
+        let ptr = unsafe { (*self.0.get()).bd_inode };
+        // SAFET: `ptr` is valid as long as the block device remains valid as well.
+        unsafe { INode::from_raw(ptr) }
     }
 }
