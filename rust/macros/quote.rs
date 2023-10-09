@@ -136,6 +136,13 @@ macro_rules! quote_spanned {
         ));
         quote_spanned!(@proc $v $span $($tt)*);
     };
+    (@proc $v:ident $span:ident $lit:literal $($tt:tt)*) => {
+        let mut literal =
+            <::proc_macro::Literal as ::core::str::FromStr>::from_str(stringify!($lit)).unwrap();
+        literal.set_span($span);
+        $v.push(::proc_macro::TokenTree::Literal(literal));
+        quote_spanned!(@proc $v $span $($tt)*);
+    };
     (@proc $v:ident $span:ident $id:ident $($tt:tt)*) => {
         $v.push(::proc_macro::TokenTree::Ident(::proc_macro::Ident::new(stringify!($id), $span)));
         quote_spanned!(@proc $v $span $($tt)*);
