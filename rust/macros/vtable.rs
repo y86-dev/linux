@@ -27,27 +27,44 @@ pub(crate) fn vtable(_attr: TokenStream, ts: TokenStream) -> TokenStream {
     };
 
     let mut body_it = body.stream().into_iter();
+    let mut new_body = vec![];
     let mut functions = Vec::new();
     let mut consts = HashSet::new();
     while let Some(token) = body_it.next() {
         match token {
             TokenTree::Ident(ident) if ident.to_string() == "fn" => {
+                new_body.push(TokenTree::Ident(ident));
                 let fn_name = match body_it.next() {
-                    Some(TokenTree::Ident(ident)) => ident.to_string(),
+                    Some(TokenTree::Ident(ident)) => {
+                        new_body.push(TokenTree::Ident(ident.clone()));
+                        ident.to_string()
+                    }
                     // Possibly we've encountered a fn pointer type instead.
-                    _ => continue,
+                    Some(tt) => {
+                        new_body.push(tt);
+                        continue;
+                    }
+                    None => continue,
                 };
                 functions.push(fn_name);
             }
             TokenTree::Ident(ident) if ident.to_string() == "const" => {
+                new_body.push(TokenTree::Ident(ident));
                 let const_name = match body_it.next() {
-                    Some(TokenTree::Ident(ident)) => ident.to_string(),
+                    Some(TokenTree::Ident(ident)) => {
+                        new_body.push(TokenTree::Ident(ident.clone()));
+                        ident.to_string()
+                    }
                     // Possibly we've encountered an inline const block instead.
-                    _ => continue,
+                    Some(tt) => {
+                        new_body.push(tt);
+                        continue;
+                    }
+                    None => continue,
                 };
                 consts.insert(const_name);
             }
-            _ => (),
+            tt => new_body.push(tt),
         }
     }
 
@@ -88,9 +105,12 @@ pub(crate) fn vtable(_attr: TokenStream, ts: TokenStream) -> TokenStream {
         }
     }
 
-    let new_body = vec![const_items.parse().unwrap(), body.stream()]
-        .into_iter()
-        .collect();
+    let new_body = vec![
+        const_items.parse().unwrap(),
+        TokenStream::from_iter(new_body),
+    ]
+    .into_iter()
+    .collect();
     tokens.push(TokenTree::Group(Group::new(Delimiter::Brace, new_body)));
     tokens.into_iter().collect()
 }
