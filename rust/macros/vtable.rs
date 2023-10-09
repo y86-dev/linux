@@ -30,25 +30,63 @@ pub(crate) fn vtable(_attr: TokenStream, ts: TokenStream) -> TokenStream {
     let mut new_body = vec![];
     let mut functions = Vec::new();
     let mut consts = HashSet::new();
+    let mut optional_attr = None;
     while let Some(token) = body_it.next() {
         match token {
-            TokenTree::Ident(ident) if ident.to_string() == "fn" => {
-                new_body.push(TokenTree::Ident(ident));
+            TokenTree::Ident(fn_ident) if fn_ident.to_string() == "fn" => {
                 let fn_name = match body_it.next() {
                     Some(TokenTree::Ident(ident)) => {
+                        new_body.push(TokenTree::Ident(fn_ident));
                         new_body.push(TokenTree::Ident(ident.clone()));
                         ident.to_string()
                     }
                     // Possibly we've encountered a fn pointer type instead.
                     Some(tt) => {
+                        if let Some(attr) = optional_attr.take() {
+                            // There was a `#[optional]` attribute in front of the `fn` keyword,
+                            // which should not happen for function pointers, so add it and let the
+                            // compiler complain.
+                            new_body.extend(attr);
+                        }
+                        new_body.push(TokenTree::Ident(fn_ident));
                         new_body.push(tt);
                         continue;
                     }
                     None => continue,
                 };
+                if optional_attr.take().is_some() {
+                    // Scan until we find the `;` at the end of the function declaration and
+                    // replace it with `{ ::kernel::build_error("<explanation>") }`.
+                    let mut span = None;
+                    while let Some(next) = body_it.next() {
+                        match next {
+                            TokenTree::Punct(punct) if punct.as_char() == ';' => {
+                                span = Some(punct.span());
+                                // Do not push `;`.
+                                break;
+                            }
+                            tt => new_body.push(tt),
+                        }
+                    }
+                    let Some(span) = span else {
+                        panic!("Could not find terminating `;` of function `{fn_name}`.")
+                    };
+                    new_body.extend(quote_spanned!(span =>
+                        {
+                            ::kernel::build_error(
+                                "Optional `#[vtable]` trait functions must not be called."
+                            )
+                        }
+                    ));
+                }
                 functions.push(fn_name);
             }
             TokenTree::Ident(ident) if ident.to_string() == "const" => {
+                if let Some(attr) = optional_attr.take() {
+                    // There was a `#[optional]` attribute in front of this `const` keyword, which
+                    // should not happen, so add it and let the compiler complain.
+                    new_body.extend(attr);
+                }
                 new_body.push(TokenTree::Ident(ident));
                 let const_name = match body_it.next() {
                     Some(TokenTree::Ident(ident)) => {
@@ -64,6 +102,27 @@ pub(crate) fn vtable(_attr: TokenStream, ts: TokenStream) -> TokenStream {
                 };
                 consts.insert(const_name);
             }
+            // Search for `#[optional]`.
+            TokenTree::Punct(punct) if punct.as_char() == '#' => match body_it.next() {
+                Some(TokenTree::Group(group)) if group.delimiter() == Delimiter::Bracket => {
+                    let contents = group.stream().into_iter().collect::<Vec<_>>();
+                    match (contents.len(), contents.get(0)) {
+                        (1, Some(TokenTree::Ident(ident))) if ident.to_string() == "optional" => {
+                            optional_attr =
+                                Some(vec![TokenTree::Punct(punct), TokenTree::Group(group)]);
+                        }
+                        _ => {
+                            new_body.push(TokenTree::Punct(punct));
+                            new_body.push(TokenTree::Group(group));
+                        }
+                    }
+                }
+                Some(tt) => {
+                    new_body.push(TokenTree::Punct(punct));
+                    new_body.push(tt);
+                }
+                None => new_body.push(TokenTree::Punct(punct)),
+            },
             tt => new_body.push(tt),
         }
     }
