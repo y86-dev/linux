@@ -30,7 +30,6 @@ pub mod alloc;
 pub mod block;
 mod build_assert;
 pub mod error;
-pub mod file;
 pub mod fs;
 pub mod init;
 pub mod ioctl;
