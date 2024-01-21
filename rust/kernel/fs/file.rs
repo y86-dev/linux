@@ -7,13 +7,13 @@
 //! C headers: [`include/linux/fs.h`](srctree/include/linux/fs.h) and
 //! [`include/linux/file.h`](srctree/include/linux/file.h)
 
-use super::{dentry::DEntry, inode::INode, FileSystem, UnspecifiedFS};
+use super::{dentry::DEntry, inode, inode::INode, inode::Ino, FileSystem, Offset, UnspecifiedFS};
 use crate::{
     bindings,
-    error::{code::*, Error, Result},
-    types::{ARef, AlwaysRefCounted, Opaque},
+    error::{code::*, from_result, Error, Result},
+    types::{ARef, AlwaysRefCounted, Locked, Opaque},
 };
-use core::{marker::PhantomData, ptr};
+use core::{marker::PhantomData, mem::ManuallyDrop, ptr};
 use macros::vtable;
 
 /// Flags associated with a [`File`].
@@ -275,10 +275,20 @@ impl core::fmt::Debug for BadFdError {
 pub trait Operations {
     /// File system that these operations are compatible with.
     type FileSystem: FileSystem + ?Sized;
+
+    /// Reads directory entries from directory files.
+    ///
+    /// [`DirEmitter::pos`] holds the current position of the directory reader.
+    fn read_dir(
+        _file: &File<Self::FileSystem>,
+        _inode: &Locked<&INode<Self::FileSystem>, inode::ReadSem>,
+        _emitter: &mut DirEmitter,
+    ) -> Result {
+        Err(EINVAL)
+    }
 }
 
 /// Represents file operations.
-#[allow(dead_code)]
 pub struct Ops<T: FileSystem + ?Sized>(pub(crate) *const bindings::file_operations, PhantomData<T>);
 
 impl<T: FileSystem + ?Sized> Ops<T> {
@@ -294,7 +304,11 @@ impl<T: FileSystem + ?Sized> Ops<T> {
                 read_iter: None,
                 write_iter: None,
                 iopoll: None,
-                iterate_shared: None,
+                iterate_shared: if T::HAS_READ_DIR {
+                    Some(Self::read_dir_callback)
+                } else {
+                    None
+                },
                 poll: None,
                 unlocked_ioctl: None,
                 compat_ioctl: None,
@@ -321,7 +335,157 @@ impl<T: FileSystem + ?Sized> Ops<T> {
                 uring_cmd: None,
                 uring_cmd_iopoll: None,
             };
+
+            unsafe extern "C" fn read_dir_callback(
+                file_ptr: *mut bindings::file,
+                ctx_ptr: *mut bindings::dir_context,
+            ) -> core::ffi::c_int {
+                from_result(|| {
+                    // SAFETY: The C API guarantees that `file` is valid for the duration of the
+                    // callback. Since this callback is specifically for filesystem T, we know `T`
+                    // is the right filesystem.
+                    let file = unsafe { File::from_raw(file_ptr) };
+
+                    // SAFETY: The C API guarantees that this is the only reference to the
+                    // `dir_context` instance.
+                    let emitter = unsafe { &mut *ctx_ptr.cast::<DirEmitter>() };
+                    let orig_pos = emitter.pos();
+
+                    // SAFETY: The C API guarantees that the inode's rw semaphore is locked in read
+                    // mode. It does not expect callees to unlock it, so we make the locked object
+                    // manually dropped to avoid unlocking it.
+                    let locked = ManuallyDrop::new(unsafe { Locked::new(file.inode()) });
+
+                    // Call the module implementation. We ignore errors if directory entries have
+                    // been succesfully emitted: this is because we want users to see them before
+                    // the error.
+                    match T::read_dir(file, &locked, emitter) {
+                        Ok(_) => Ok(0),
+                        Err(e) => {
+                            if emitter.pos() == orig_pos {
+                                Err(e)
+                            } else {
+                                Ok(0)
+                            }
+                        }
+                    }
+                })
+            }
         }
         Self(&Table::<U>::TABLE, PhantomData)
+    }
+}
+
+/// The types of directory entries reported by [`Operations::read_dir`].
+#[repr(u32)]
+#[derive(Copy, Clone)]
+pub enum DirEntryType {
+    /// Unknown type.
+    Unknown = bindings::DT_UNKNOWN,
+
+    /// Named pipe (first-in, first-out) type.
+    Fifo = bindings::DT_FIFO,
+
+    /// Character device type.
+    Chr = bindings::DT_CHR,
+
+    /// Directory type.
+    Dir = bindings::DT_DIR,
+
+    /// Block device type.
+    Blk = bindings::DT_BLK,
+
+    /// Regular file type.
+    Reg = bindings::DT_REG,
+
+    /// Symbolic link type.
+    Lnk = bindings::DT_LNK,
+
+    /// Named unix-domain socket type.
+    Sock = bindings::DT_SOCK,
+
+    /// White-out type.
+    Wht = bindings::DT_WHT,
+}
+
+impl From<inode::Type> for DirEntryType {
+    fn from(value: inode::Type) -> Self {
+        match value {
+            inode::Type::Dir => DirEntryType::Dir,
+        }
+    }
+}
+
+impl TryFrom<u32> for DirEntryType {
+    type Error = crate::error::Error;
+
+    fn try_from(v: u32) -> Result<Self> {
+        match v {
+            v if v == Self::Unknown as u32 => Ok(Self::Unknown),
+            v if v == Self::Fifo as u32 => Ok(Self::Fifo),
+            v if v == Self::Chr as u32 => Ok(Self::Chr),
+            v if v == Self::Dir as u32 => Ok(Self::Dir),
+            v if v == Self::Blk as u32 => Ok(Self::Blk),
+            v if v == Self::Reg as u32 => Ok(Self::Reg),
+            v if v == Self::Lnk as u32 => Ok(Self::Lnk),
+            v if v == Self::Sock as u32 => Ok(Self::Sock),
+            v if v == Self::Wht as u32 => Ok(Self::Wht),
+            _ => Err(EDOM),
+        }
+    }
+}
+
+/// Directory entry emitter.
+///
+/// This is used in [`Operations::read_dir`] implementations to report the directory entry.
+#[repr(transparent)]
+pub struct DirEmitter(bindings::dir_context);
+
+impl DirEmitter {
+    /// Returns the current position of the emitter.
+    pub fn pos(&self) -> Offset {
+        self.0.pos
+    }
+
+    /// Emits a directory entry.
+    ///
+    /// `pos_inc` is the number with which to increment the current position on success.
+    ///
+    /// `name` is the name of the entry.
+    ///
+    /// `ino` is the inode number of the entry.
+    ///
+    /// `etype` is the type of the entry.
+    ///
+    /// Returns `false` when the entry could not be emitted, possibly because the user-provided
+    /// buffer is full.
+    pub fn emit(&mut self, pos_inc: Offset, name: &[u8], ino: Ino, etype: DirEntryType) -> bool {
+        let Ok(name_len) = i32::try_from(name.len()) else {
+            return false;
+        };
+
+        let Some(actor) = self.0.actor else {
+            return false;
+        };
+
+        let Some(new_pos) = self.0.pos.checked_add(pos_inc) else {
+            return false;
+        };
+
+        // SAFETY: `name` is valid at least for the duration of the `actor` call.
+        let ret = unsafe {
+            actor(
+                &mut self.0,
+                name.as_ptr().cast::<i8>(),
+                name_len,
+                self.0.pos,
+                ino,
+                etype as _,
+            )
+        };
+        if ret {
+            self.0.pos = new_pos;
+        }
+        ret
     }
 }

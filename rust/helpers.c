@@ -195,6 +195,18 @@ unsigned long rust_helper_copy_to_user(void __user *to, const void *from,
 }
 EXPORT_SYMBOL_GPL(rust_helper_copy_to_user);
 
+void rust_helper_inode_lock_shared(struct inode *inode)
+{
+	inode_lock_shared(inode);
+}
+EXPORT_SYMBOL_GPL(rust_helper_inode_lock_shared);
+
+void rust_helper_inode_unlock_shared(struct inode *inode)
+{
+	inode_unlock_shared(inode);
+}
+EXPORT_SYMBOL_GPL(rust_helper_inode_unlock_shared);
+
 /*
  * `bindgen` binds the C `size_t` type as the Rust `usize` type, so we can
  * use it in contexts where Rust expects a `usize` like slice (array) indices.
