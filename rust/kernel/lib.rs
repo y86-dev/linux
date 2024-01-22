@@ -46,6 +46,7 @@ pub mod sync;
 pub mod task;
 pub mod time;
 pub mod types;
+pub mod user;
 pub mod workqueue;
 
 #[doc(hidden)]
