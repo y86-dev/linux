@@ -3,7 +3,7 @@
 //! String representations.
 
 use crate::alloc::{box_ext::BoxExt, flags::*, AllocError};
-use crate::error::{code::*, Error};
+use crate::error::{code::*, Error, Result};
 use crate::{bindings, types::ForeignOwnable};
 use alloc::boxed::Box;
 use core::fmt::{self, Write};
@@ -867,12 +867,29 @@ impl TryFrom<&CStr> for CString {
         })
     }
 }
+
 impl TryFrom<Box<[u8]>> for CString {
     type Error = CStrConvertError;
 
     fn try_from(buf: Box<[u8]>) -> Result<CString, CStrConvertError> {
         CStr::from_bytes_with_nul(&buf)?;
         Ok(Self { buf })
+    }
+}
+
+impl TryFrom<&[u8]> for CString {
+    type Error = Error;
+
+    fn try_from(buf: &[u8]) -> Result<CString> {
+        let len = buf.len().checked_add(1).ok_or(ENOMEM)?;
+        let mut b = Box::<u8>::new_uninit_slice(len, GFP_KERNEL)?;
+        for (i, c) in buf.iter().enumerate() {
+            b[i].write(*c);
+        }
+        b[len - 1].write(0);
+
+        // SAFETY: `b` was fully initialised above.
+        Ok(unsafe { b.assume_init() }.try_into()?)
     }
 }
 
