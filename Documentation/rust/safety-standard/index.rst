@@ -92,21 +92,28 @@ And this would result in a dereference of a null pointer.
 In its essence, a sound API means that if someone only writes safe code, they can never encounter UB
 even if they call safe code that calls ``unsafe`` code behind the scenes.
 
+For more examples of unsound code see examples.rst.
+
 Because unsoundness issues have the potential for allowing safe code to experience UB, they are
-treated similarly to actual bugs with UB. Their fixes should also be included in the  stable tree.
+treated similarly to real UB. Their fixes should also be included in the stable tree.
 
 Safety Documentation
 ====================
 
-After trying to minimize and remove as much ``unsafe`` code as possible, there still is some left.
-This is because some things are just not possible in only safe code. This last part of ``unsafe``
-code must still be correct. Helping with that is the safety documentation: it meticulously documents
-the various requirements and justifications for every line of ``unsafe`` code. That way it can be
-ensured that all ``unsafe`` code is sound without anyone needing to know the whole kernel at once.
+No matter how hard one tries to remove ``unsafe`` code, it is impossible to completely get rid of it
+in the Kernel. There are things that are impossible for safe code. For example interacting with the
+C side. So one can never be completely sure that there are no memory issues lurking somewhere.
+
+This is where safety documentation helps: it meticulously documents the various requirements and
+justifications for every line of ``unsafe`` code. That way the risk of writing unsound ``unsafe``
+code is reduced drastically.
+
 The gist of the idea is this: every ``unsafe`` operation documents its requirements and every
 location that uses an ``unsafe`` operation documents for every requirement a justification why they
 are fulfilled. If now all requirements and justifications are correct, then there can only be sound
-``unsafe`` code.
+``unsafe`` code. Reducing the global problem of correctness of the whole kernel to the correctness
+of each and every ``unsafe`` code block makes it a local problem. Local problems are a lot easier to
+handle, since each instance can be fixed/reviewed independently.
 
 The ``unsafe`` keywords has two different meanings depending on the context it is used in:
 
@@ -237,6 +244,8 @@ Further Pages
 
 .. toctree::
    :maxdepth: 1
+
+   examples
 
 .. only::  subproject and html
 
