@@ -191,6 +191,8 @@ block. For example::
 
 In this case it is more readable to not split the block into multiple parts.
 
+See justifications.rst for a full list of standardized justifications.
+
 ``unsafe`` Traits
 -----------------
 
@@ -224,6 +226,8 @@ similarly to :ref:`unsafe-Blocks`::
 
     // SAFETY: <justification>
     unsafe impl Foo for Bar {}
+
+See justifications.rst for a full list of standardized justifications.
 
 Guarantees
 ==========
@@ -267,6 +271,7 @@ Further Pages
    guarantee
    type-invariants
    requirements
+   justifications
 
 .. only::  subproject and html
 
