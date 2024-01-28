@@ -54,6 +54,7 @@ the same invocation used for compilation, e.g.::
 Please note that Clippy may change code generation, thus it should not be
 enabled while building a production kernel.
 
+.. _rust-abstractions:
 
 Abstractions vs. bindings
 -------------------------

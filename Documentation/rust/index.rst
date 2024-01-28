@@ -39,6 +39,7 @@ configurations.
     quick-start
     general-information
     coding-guidelines
+    safety-standard/index
     arch-support
     testing
 
