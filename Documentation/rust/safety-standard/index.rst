@@ -157,6 +157,8 @@ The safety requirements have to be documented in the so called safety section::
         // ...
     }
 
+See requirements.rst for a full list of standardized safety requirements.
+
 .. _unsafe-Blocks:
 
 ``unsafe`` Blocks
@@ -207,6 +209,8 @@ are called safety requirements and need to be documented in the same way::
     ///
     /// <safety requirements>
     unsafe trait Foo {}
+
+See requirements.rst for a full list of standardized safety requirements.
 
 ``unsafe`` Impls
 ----------------
@@ -262,6 +266,7 @@ Further Pages
    examples
    guarantee
    type-invariants
+   requirements
 
 .. only::  subproject and html
 
