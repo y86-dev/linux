@@ -94,6 +94,13 @@ def generate_crates(srctree, objtree, sysroot_src, external_src, cfgs):
     crates[-1]["env"]["OBJTREE"] = str(objtree.resolve(True))
 
     append_crate(
+        "pinned_init",
+        srctree / "rust" / "pinned_init" / "_lib.rs",
+        ["core", "alloc", "macros"],
+        cfg=cfg,
+    )
+
+    append_crate(
         "kernel",
         srctree / "rust" / "kernel" / "lib.rs",
         ["core", "alloc", "macros", "build_error", "bindings"],
