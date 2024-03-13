@@ -19,7 +19,6 @@
 //! We will look at the following example:
 //!
 //! ```rust,ignore
-//! # use kernel::pinned_init::*;
 //! # use core::pin::Pin;
 //! #[pin_data]
 //! #[repr(C)]
@@ -45,7 +44,7 @@
 //! #[pinned_drop]
 //! impl PinnedDrop for Foo {
 //!     fn drop(self: Pin<&mut Self>) {
-//!         pr_info!("{self:p} is getting dropped.");
+//!         println!("{self:p} is getting dropped.");
 //!     }
 //! }
 //!
@@ -75,7 +74,6 @@
 //! Here is the definition of `Bar` from our example:
 //!
 //! ```rust,ignore
-//! # use kernel::pinned_init::*;
 //! #[pin_data]
 //! #[repr(C)]
 //! struct Bar<T> {
@@ -412,7 +410,7 @@
 //! #[pinned_drop]
 //! impl PinnedDrop for Foo {
 //!     fn drop(self: Pin<&mut Self>) {
-//!         pr_info!("{self:p} is getting dropped.");
+//!         println!("{self:p} is getting dropped.");
 //!     }
 //! }
 //! ```
@@ -423,7 +421,7 @@
 //! // `unsafe`, full path and the token parameter are added, everything else stays the same.
 //! unsafe impl ::kernel::pinned_init::PinnedDrop for Foo {
 //!     fn drop(self: Pin<&mut Self>, _: ::kernel::pinned_init::__internal::OnlyCallFromDrop) {
-//!         pr_info!("{self:p} is getting dropped.");
+//!         println!("{self:p} is getting dropped.");
 //!     }
 //! }
 //! ```
