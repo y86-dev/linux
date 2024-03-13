@@ -5,9 +5,6 @@
 //! It also allows in-place initialization of big `struct`s that would otherwise produce a stack
 //! overflow.
 //!
-//! Most `struct`s from the [`sync`] module need to be pinned, because they contain self-referential
-//! `struct`s from C. [Pinning][pinning] is Rust's way of ensuring data does not move.
-//!
 //! # Overview
 //!
 //! To initialize a `struct` with an in-place constructor you will need two things:
@@ -196,7 +193,6 @@
 //! the `kernel` crate. The [`sync`] module is a good starting point.
 //!
 //! [`sync`]: kernel::sync
-//! [pinning]: https://doc.rust-lang.org/std/pin/index.html
 //! [structurally pinned fields]:
 //!     https://doc.rust-lang.org/std/pin/index.html#pinning-is-structural-for-field
 //! [stack]: crate::stack_pin_init
