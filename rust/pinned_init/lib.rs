@@ -13,7 +13,7 @@
 //! To initialize a `struct` with an in-place constructor you will need two things:
 //! - an in-place constructor,
 //! - a memory location that can hold your `struct` (this can be the [stack], an [`Arc<T>`],
-//!   [`UniqueArc<T>`], [`Box<T>`] or any other smart pointer that implements [`InPlaceInit`]).
+//!   [`Box<T>`] or any other smart pointer that implements [`InPlaceInit`]).
 //!
 //! To get an in-place constructor there are generally three options:
 //! - directly creating an in-place constructor using the [`pin_init!`] macro,
@@ -195,12 +195,13 @@
 //! For more information on how to use [`pin_init_from_closure()`], take a look at the uses inside
 //! the `kernel` crate. The [`sync`] module is a good starting point.
 //!
-//! [`sync`]: kernel::sync
+//! [`sync`]: https://github.com/Rust-for-Linux/linux/tree/rust-next/rust/kernel/sync
 //! [pinning]: https://doc.rust-lang.org/std/pin/index.html
 //! [structurally pinned fields]:
 //!     https://doc.rust-lang.org/std/pin/index.html#pinning-is-structural-for-field
 //! [stack]: crate::stack_pin_init
-//! [`Arc<T>`]: crate::sync::Arc
+//! [`Arc<T>`]: ../kernel/sync/struct.Arc.html
+//! [`Box<T>`]: alloc::boxed::Box
 //! [`impl PinInit<Foo>`]: PinInit
 //! [`impl PinInit<T, E>`]: PinInit
 //! [`impl Init<T, E>`]: Init
@@ -548,10 +549,10 @@ macro_rules! stack_try_pin_init {
 /// });
 /// ```
 ///
-/// [`try_pin_init!`]: kernel::try_pin_init
+/// [`try_pin_init!`]: crate::try_pin_init
 /// [`NonNull<Self>`]: core::ptr::NonNull
 // For a detailed example of how this macro works, see the module documentation of the hidden
-// module `__internal` inside of `init/__internal.rs`.
+// module `__internal` inside of `./__internal.rs`.
 #[macro_export]
 macro_rules! pin_init {
     ($(&$this:ident in)? $t:ident $(::<$($generics:ty),* $(,)?>)? {
@@ -608,7 +609,7 @@ macro_rules! pin_init {
 /// }
 /// ```
 // For a detailed example of how this macro works, see the module documentation of the hidden
-// module `__internal` inside of `init/__internal.rs`.
+// module `__internal` inside of `./__internal.rs`.
 #[macro_export]
 macro_rules! try_pin_init {
     ($(&$this:ident in)? $t:ident $(::<$($generics:ty),* $(,)?>)? {
@@ -657,7 +658,7 @@ macro_rules! try_pin_init {
 ///
 /// [`try_init!`]: crate::try_init!
 // For a detailed example of how this macro works, see the module documentation of the hidden
-// module `__internal` inside of `init/__internal.rs`.
+// module `__internal` inside of `./__internal.rs`.
 #[macro_export]
 macro_rules! init {
     ($(&$this:ident in)? $t:ident $(::<$($generics:ty),* $(,)?>)? {
@@ -708,7 +709,7 @@ macro_rules! init {
 /// }
 /// ```
 // For a detailed example of how this macro works, see the module documentation of the hidden
-// module `__internal` inside of `init/__internal.rs`.
+// module `__internal` inside of `./__internal.rs`.
 #[macro_export]
 macro_rules! try_init {
     ($(&$this:ident in)? $t:ident $(::<$($generics:ty),* $(,)?>)? {
@@ -744,8 +745,8 @@ macro_rules! try_init {
 /// A pin-initializer for the type `T`.
 ///
 /// To use this initializer, you will need a suitable memory location that can hold a `T`. This can
-/// be [`Box<T>`], [`Arc<T>`], [`UniqueArc<T>`] or even the stack (see [`stack_pin_init!`]). Use the
-/// [`InPlaceInit::pin_init`] function of a smart pointer like [`Arc<T>`] on this.
+/// be [`Box<T>`], [`Arc<T>`] or even the stack (see [`stack_pin_init!`]). Use the
+/// [`InPlaceInit::try_pin_init`] function of a smart pointer like [`Arc<T>`] on this.
 ///
 /// Also see the [module description](self).
 ///
@@ -762,8 +763,7 @@ macro_rules! try_init {
 ///     - `slot` is not partially initialized.
 /// - while constructing the `T` at `slot` it upholds the pinning invariants of `T`.
 ///
-/// [`Arc<T>`]: crate::sync::Arc
-/// [`Arc::pin_init`]: crate::sync::Arc::pin_init
+/// [`Arc<T>`]: ../kernel/sync/struct.Arc.html
 #[must_use = "An initializer must be used in order to create its value."]
 pub unsafe trait PinInit<T: ?Sized, E = Infallible>: Sized {
     /// Initializes `slot`.
@@ -853,8 +853,8 @@ where
 /// An initializer for `T`.
 ///
 /// To use this initializer, you will need a suitable memory location that can hold a `T`. This can
-/// be [`Box<T>`], [`Arc<T>`], [`UniqueArc<T>`] or even the stack (see [`stack_pin_init!`]). Use the
-/// [`InPlaceInit::init`] function of a smart pointer like [`Arc<T>`] on this. Because
+/// be [`Box<T>`], [`Arc<T>`] or even the stack (see [`stack_pin_init!`]). Use the
+/// [`InPlaceInit::try_init`] function of a smart pointer like [`Arc<T>`] on this. Because
 /// [`PinInit<T, E>`] is a super trait, you can use every function that takes it as well.
 ///
 /// Also see the [module description](self).
@@ -878,7 +878,7 @@ where
 /// Contrary to its supertype [`PinInit<T, E>`] the caller is allowed to
 /// move the pointee after initialization.
 ///
-/// [`Arc<T>`]: crate::sync::Arc
+/// [`Arc<T>`]: ../kernel/sync/struct.Arc.html
 #[must_use = "An initializer must be used in order to create its value."]
 pub unsafe trait Init<T: ?Sized, E = Infallible>: PinInit<T, E> {
     /// Initializes `slot`.
@@ -1238,7 +1238,7 @@ impl<T> InPlaceInit<T> for UniqueArc<T> {
 ///
 /// This trait must be implemented via the [`pinned_drop`] proc-macro attribute on the impl.
 ///
-/// [`pinned_drop`]: kernel::macros::pinned_drop
+/// [`pinned_drop`]: ::macros::pinned_drop
 pub unsafe trait PinnedDrop: __internal::HasPinData {
     /// Executes the pinned destructor of this type.
     ///
