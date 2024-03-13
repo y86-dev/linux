@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-//! This module provides the macros that actually implement the proc-macros `pin_data` and
-//! `pinned_drop`. It also contains `__init_internal` the implementation of the `{try_}{pin_}init!`
-//! macros.
+//! This module provides the macros that actually implement the proc-macros `pin_data`,
+//! `pinned_drop` and the derive macro for zeroable. It also contains `__init_internal` the
+//! implementation of the `{try_}{pin_}init!` macros.
 //!
 //! These macros should never be called directly, since they expect their input to be
 //! in a certain format which is internal. If used incorrectly, these macros can lead to UB even in
@@ -14,13 +14,11 @@
 //! # Macro expansion example
 //!
 //! This section is intended for readers trying to understand the macros in this module and the
-//! `pin_init!` macros from `init.rs`.
+//! `{try_}{pin_}init!` macros from `lib.rs`.
 //!
 //! We will look at the following example:
 //!
 //! ```rust,ignore
-//! # use kernel::init::*;
-//! # use core::pin::Pin;
 //! #[pin_data]
 //! #[repr(C)]
 //! struct Bar<T> {
@@ -45,7 +43,7 @@
 //! #[pinned_drop]
 //! impl PinnedDrop for Foo {
 //!     fn drop(self: Pin<&mut Self>) {
-//!         pr_info!("{self:p} is getting dropped.");
+//!         println!("{self:p} is getting dropped.");
 //!     }
 //! }
 //!
@@ -75,7 +73,6 @@
 //! Here is the definition of `Bar` from our example:
 //!
 //! ```rust,ignore
-//! # use kernel::init::*;
 //! #[pin_data]
 //! #[repr(C)]
 //! struct Bar<T> {
@@ -412,7 +409,7 @@
 //! #[pinned_drop]
 //! impl PinnedDrop for Foo {
 //!     fn drop(self: Pin<&mut Self>) {
-//!         pr_info!("{self:p} is getting dropped.");
+//!         println!("{self:p} is getting dropped.");
 //!     }
 //! }
 //! ```
@@ -423,7 +420,7 @@
 //! // `unsafe`, full path and the token parameter are added, everything else stays the same.
 //! unsafe impl ::pinned_init::PinnedDrop for Foo {
 //!     fn drop(self: Pin<&mut Self>, _: ::pinned_init::__internal::OnlyCallFromDrop) {
-//!         pr_info!("{self:p} is getting dropped.");
+//!         println!("{self:p} is getting dropped.");
 //!     }
 //! }
 //! ```
@@ -492,7 +489,7 @@
 //!         init(slot).map(|__InitOk| ())
 //!     };
 //!     let init = unsafe {
-//!         ::kernel::pinned_init::pin_init_from_closure::<_, ::core::convert::Infallible>(init)
+//!         ::pinned_init::pin_init_from_closure::<_, ::core::convert::Infallible>(init)
 //!     };
 //!     init
 //! };
