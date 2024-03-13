@@ -38,8 +38,8 @@
 //!
 //! ```rust
 //! # #![allow(clippy::disallowed_names)]
-//! use kernel::sync::{new_mutex, Mutex};
 //! # #![feature(allocator_api)]
+//! use pinned_init::*;
 //! # use core::pin::Pin;
 //! # #[path = "./examples/mutex.rs"] mod mutex; use mutex::*;
 //! #[pin_data]
@@ -61,9 +61,9 @@
 //!
 //! ```rust
 //! # #![allow(clippy::disallowed_names)]
-//! # use kernel::sync::{new_mutex, Mutex};
 //! # #![feature(allocator_api)]
 //! # #[path = "./examples/mutex.rs"] mod mutex; use mutex::*;
+//! # use pinned_init::*;
 //! # use core::pin::Pin;
 //! # #[pin_data]
 //! # struct Foo {
@@ -86,19 +86,23 @@
 //! above method only works for types where you can access the fields.
 //!
 //! ```rust
-//! # use kernel::sync::{new_mutex, Arc, Mutex};
 //! # #![feature(allocator_api)]
+// TODO figure out how to import kernel::sync::Arc
+//! # #[cfg(not(kernel = "true"))] {
 //! # #[path = "./examples/mutex.rs"] mod mutex; use mutex::*;
+//! # use pinned_init::*;
+//! # use std::sync::Arc;
 //! # use core::pin::Pin;
 //! let mtx: Result<Pin<Arc<CMutex<usize>>>, _> = Arc::pin_init(CMutex::new(42));
+//! # }
 //! ```
 //!
 //! To declare an init macro/function you just return an [`impl PinInit<T, E>`]:
 //!
 //! ```rust
 //! # #![allow(clippy::disallowed_names)]
-//! # use kernel::{sync::Mutex, prelude::*, new_mutex, pinned_init::PinInit, try_pin_init};
 //! # #![feature(allocator_api)]
+//! # use pinned_init::*;
 //! # #[path = "./examples/mutex.rs"] mod mutex; use mutex::*;
 //! #[pin_data]
 //! struct DriverData {
@@ -209,6 +213,11 @@
 //! [`pin_data`]: ::macros::pin_data
 //! [`pin_init!`]: crate::pin_init!
 
+#![forbid(missing_docs, unsafe_op_in_unsafe_fn)]
+#![no_std]
+#![feature(allocator_api)]
+#![feature(new_uninit)]
+
 use alloc::boxed::Box;
 use core::{
     alloc::AllocError,
@@ -226,15 +235,18 @@ pub mod __internal;
 #[doc(hidden)]
 pub mod macros;
 
+#[allow(unused_extern_crates)]
+extern crate self as pinned_init;
+
 /// Initialize and pin a type directly on the stack.
 ///
 /// # Examples
 ///
 /// ```rust
 /// # #![allow(clippy::disallowed_names)]
-/// # use kernel::{init, macros::pin_data, pin_init, stack_pin_init, pinned_init::*, sync::Mutex, new_mutex};
 /// # #![feature(allocator_api)]
 /// # #[path = "./examples/mutex.rs"] mod mutex; use mutex::*;
+/// # use pinned_init::*;
 /// # use core::pin::Pin;
 /// #[pin_data]
 /// struct Foo {
@@ -269,8 +281,8 @@ pub mod macros;
 macro_rules! stack_pin_init {
     (let $var:ident $(: $t:ty)? = $val:expr) => {
         let val = $val;
-        let mut $var = ::core::pin::pin!($crate::pinned_init::__internal::StackInit$(::<$t>)?::uninit());
-        let mut $var = match $crate::pinned_init::__internal::StackInit::init($var, val) {
+        let mut $var = ::core::pin::pin!($crate::__internal::StackInit$(::<$t>)?::uninit());
+        let mut $var = match $crate::__internal::StackInit::init($var, val) {
             Ok(res) => res,
             Err(x) => {
                 let x: ::core::convert::Infallible = x;
@@ -286,10 +298,10 @@ macro_rules! stack_pin_init {
 ///
 /// ```rust
 /// # #![allow(clippy::disallowed_names)]
-/// # use kernel::{init, pin_init, stack_try_pin_init, pinned_init::*, sync::Mutex, new_mutex};
 /// # use macros::pin_data;
 /// # #![feature(allocator_api)]
 /// # #[path = "./examples/mutex.rs"] mod mutex; use mutex::*;
+/// # use pinned_init::*;
 /// # use core::pin::Pin;
 /// #[pin_data]
 /// struct Foo {
@@ -314,10 +326,10 @@ macro_rules! stack_pin_init {
 ///
 /// ```rust
 /// # #![allow(clippy::disallowed_names)]
-/// # use kernel::{init, pin_init, stack_try_pin_init, pinned_init::*, sync::Mutex, new_mutex};
 /// # use macros::pin_data;
 /// # #![feature(allocator_api)]
 /// # #[path = "./examples/mutex.rs"] mod mutex; use mutex::*;
+/// # use pinned_init::*;
 /// # use core::pin::Pin;
 /// #[pin_data]
 /// struct Foo {
@@ -349,13 +361,13 @@ macro_rules! stack_pin_init {
 macro_rules! stack_try_pin_init {
     (let $var:ident $(: $t:ty)? = $val:expr) => {
         let val = $val;
-        let mut $var = ::core::pin::pin!($crate::pinned_init::__internal::StackInit$(::<$t>)?::uninit());
-        let mut $var = $crate::pinned_init::__internal::StackInit::init($var, val);
+        let mut $var = ::core::pin::pin!($crate::__internal::StackInit$(::<$t>)?::uninit());
+        let mut $var = $crate::__internal::StackInit::init($var, val);
     };
     (let $var:ident $(: $t:ty)? =? $val:expr) => {
         let val = $val;
-        let mut $var = ::core::pin::pin!($crate::pinned_init::__internal::StackInit$(::<$t>)?::uninit());
-        let mut $var = $crate::pinned_init::__internal::StackInit::init($var, val)?;
+        let mut $var = ::core::pin::pin!($crate::__internal::StackInit$(::<$t>)?::uninit());
+        let mut $var = $crate::__internal::StackInit::init($var, val)?;
     };
 }
 
@@ -368,7 +380,7 @@ macro_rules! stack_try_pin_init {
 ///
 /// ```rust
 /// # #![allow(clippy::disallowed_names)]
-/// # use kernel::{init, pin_init, macros::pin_data, pinned_init::*};
+/// # use pinned_init::*;
 /// # use core::pin::Pin;
 /// #[pin_data]
 /// struct Foo {
@@ -413,7 +425,7 @@ macro_rules! stack_try_pin_init {
 ///
 /// ```rust
 /// # #![allow(clippy::disallowed_names)]
-/// # use kernel::{init, pin_init, prelude::*, pinned_init::*};
+/// # use pinned_init::*;
 /// # use core::pin::Pin;
 /// # #[pin_data]
 /// # struct Foo {
@@ -440,7 +452,7 @@ macro_rules! stack_try_pin_init {
 ///
 /// ```rust
 /// # #![allow(clippy::disallowed_names)]
-/// # use kernel::{init, pin_init, macros::pin_data, pinned_init::*};
+/// # use pinned_init::*;
 /// # use core::pin::Pin;
 /// # #[pin_data]
 /// # struct Foo {
@@ -468,7 +480,7 @@ macro_rules! stack_try_pin_init {
 ///
 /// ```rust
 /// # #![allow(clippy::disallowed_names)]
-/// # use kernel::{init, pin_init, macros::pin_data, pinned_init::*};
+/// # use pinned_init::*;
 /// # use core::pin::Pin;
 /// # #[pin_data]
 /// # struct Foo {
@@ -527,7 +539,7 @@ macro_rules! stack_try_pin_init {
 /// For instance:
 ///
 /// ```rust
-/// # use kernel::{macros::{Zeroable, pin_data}, pin_init};
+/// # use pinned_init::*;
 /// # use core::{ptr::addr_of_mut, marker::PhantomPinned};
 /// #[pin_data]
 /// #[derive(Zeroable)]
@@ -583,6 +595,7 @@ macro_rules! pin_init {
 /// # #![feature(allocator_api, new_uninit)]
 /// use kernel::{pinned_init::{self, PinInit}, error::Error};
 /// # use core::alloc::AllocError;
+/// use pinned_init::*;
 /// #[pin_data]
 /// struct BigBuf {
 ///     big: Box<[u8; 1024 * 1024 * 1024]>,
@@ -640,7 +653,7 @@ macro_rules! try_pin_init {
 /// ```rust
 /// # #![feature(allocator_api)]
 /// # #[path = "./examples/mutex.rs"] mod mutex; use mutex::*;
-/// # use kernel::{try_init, init::{zeroed, InPlaceInit}};
+/// use pinned_init::*;
 /// struct BigBuf {
 ///     big: Box<[u8; 1024 * 1024 * 1024]>,
 ///     small: [u8; 1024 * 1024],
@@ -687,9 +700,9 @@ macro_rules! init {
 /// # Examples
 ///
 /// ```rust
-/// use kernel::{pinned_init::{PinInit, zeroed}, error::Error};
 /// # #![feature(allocator_api)]
 /// # use core::alloc::AllocError;
+/// use pinned_init::*;
 /// struct BigBuf {
 ///     big: Box<[u8; 1024 * 1024 * 1024]>,
 ///     small: [u8; 1024 * 1024],
@@ -769,7 +782,7 @@ pub unsafe trait PinInit<T: ?Sized, E = Infallible>: Sized {
     /// ```rust
     /// # #![feature(allocator_api)]
     /// # #[path = "./examples/mutex.rs"] mod mutex; use mutex::*;
-    /// # use kernel::pinned_init::PinInit;
+    /// # use pinned_init::*;
     /// let mtx_init = CMutex::new(42);
     /// // Make the initializer print the value.
     /// let mtx_init = mtx_init.pin_chain(|mtx| {
@@ -861,7 +874,7 @@ pub unsafe trait Init<T: ?Sized, E = Infallible>: PinInit<T, E> {
     ///
     /// ```rust
     /// # #![allow(clippy::disallowed_names)]
-    /// use kernel::{types::Opaque, pinned_init::{self, init_from_closure}};
+    /// # use pinned_init::*;
     /// struct Foo {
     ///     buf: [u8; 1_000_000],
     /// }
@@ -974,7 +987,7 @@ pub fn uninit<T, E>() -> impl Init<MaybeUninit<T>, E> {
 /// # Examples
 ///
 /// ```rust
-/// use kernel::{error::Error, pinned_init::init_array_from_fn};
+/// # use pinned_init::*;
 /// let array: Box<[usize; 1_000]> = Box::init::<Error>(init_array_from_fn(|i| i)).unwrap();
 /// assert_eq!(array.len(), 1_000);
 /// ```
@@ -1014,12 +1027,16 @@ where
 /// # Examples
 ///
 /// ```rust
-/// use kernel::{sync::Arc, pinned_init::pin_init_array_from_fn};
 /// # #![feature(allocator_api)]
+// TODO figure out how to import kernel::sync::Arc
+/// # #[cfg(not(kernel = "true"))] {
 /// # #[path = "./examples/mutex.rs"] mod mutex; use mutex::*;
+/// # use pinned_init::*;
+/// # use std::sync::Arc;
 /// let array: Arc<[CMutex<usize>; 1_000]> =
 ///     Arc::pin_init(pin_init_array_from_fn(|i| CMutex::new(i))).unwrap();
 /// assert_eq!(array.len(), 1_000);
+/// # }
 /// ```
 pub fn pin_init_array_from_fn<I, const N: usize, T, E>(
     mut make_init: impl FnMut(usize) -> I,
@@ -1118,9 +1135,9 @@ impl<T> InPlaceInit<T> for Box<T> {
 /// Use [`pinned_drop`] to implement this trait safely:
 ///
 /// ```rust
-/// use kernel::macros::pinned_drop;
 /// # #![feature(allocator_api)]
 /// # #[path = "./examples/mutex.rs"] mod mutex; use mutex::*;
+/// # use pinned_init::*;
 /// use core::pin::Pin;
 /// #[pin_data(PinnedDrop)]
 /// struct Foo {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 
-//! Extension to the `pinned_init` crate.
+//! Extension to the [`pinned_init`] crate.
 //!
 //! Most `struct`s from the [`sync`] module need to be pinned, because they contain self-referential
 //! `struct`s from C. [Pinning][pinning] is Rust's way of ensuring data does not move.
@@ -115,21 +115,19 @@
 //! }
 //! ```
 //!
-//! [`pin_init!`]: kernel::pin_init
+//! [`pin_init!`]: ::pinned_init::pin_init
 //! [`sync`]: crate::sync
 //! [pinning]: https://doc.rust-lang.org/std/pin/index.html
 //! [`Opaque`]: kernel::types::Opaque
 //! [`Opaque::ffi_init`]: kernel::types::Opaque::ffi_init
 
-#![allow(unused_macros)]
-
 use core::pin::Pin;
 
-use crate::pinned_init::{self, InPlaceInit, Init, PinInit, Zeroable};
 use crate::{
     error::{self, Error},
     types::Opaque,
 };
+use pinned_init::{self, InPlaceInit, Init, PinInit, Zeroable};
 
 /// Extension trait of [`InPlaceInit<T>`] allowing better interoperability with the custom
 /// [`Error`] type.
@@ -209,6 +207,7 @@ pub use crate::try_init;
 /// [`init!`]: pinned_init::init
 // For a detailed example of how this macro works, see the module documentation of the hidden
 // module `__internal` inside of `init/__internal.rs`.
+#[macro_export]
 macro_rules! try_init {
     ($(&$this:ident in)? $t:ident $(::<$($generics:ty),* $(,)?>)? {
         $($fields:tt)*
@@ -270,6 +269,7 @@ pub use crate::try_pin_init;
 /// [`pin_init!`]: ::pinned_init::pin_init
 // For a detailed example of how this macro works, see the module documentation of the hidden
 // module `__internal` inside of `init/__internal.rs`.
+#[macro_export]
 macro_rules! try_pin_init {
     ($(&$this:ident in)? $t:ident $(::<$($generics:ty),* $(,)?>)? {
         $($fields:tt)*

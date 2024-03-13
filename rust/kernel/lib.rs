@@ -26,6 +26,7 @@
 compile_error!("Missing kernel configuration for conditional compilation");
 
 // Allow proc-macros to refer to `::kernel` inside the `kernel` crate (this crate).
+#[allow(unused_extern_crates)]
 extern crate self as kernel;
 
 #[cfg(not(test))]
@@ -39,8 +40,6 @@ pub mod ioctl;
 pub mod kunit;
 #[cfg(CONFIG_NET)]
 pub mod net;
-#[path = "../pinned_init/lib.rs"]
-pub mod pinned_init;
 pub mod prelude;
 pub mod print;
 mod static_assert;
