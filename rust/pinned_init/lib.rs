@@ -209,7 +209,7 @@
 use crate::{
     error::{self, Error},
     sync::UniqueArc,
-    types::{Opaque, ScopeGuard},
+    types::Opaque,
 };
 use alloc::boxed::Box;
 use core::{
@@ -1020,25 +1020,22 @@ where
 {
     let init = move |slot: *mut [T; N]| {
         let slot = slot.cast::<T>();
-        // Counts the number of initialized elements and when dropped drops that many elements from
-        // `slot`.
-        let mut init_count = ScopeGuard::new_with_data(0, |i| {
-            // We now free every element that has been initialized before.
-            // SAFETY: The loop initialized exactly the values from 0..i and since we
-            // return `Err` below, the caller will consider the memory at `slot` as
-            // uninitialized.
-            unsafe { ptr::drop_in_place(ptr::slice_from_raw_parts_mut(slot, i)) };
-        });
         for i in 0..N {
             let init = make_init(i);
             // SAFETY: Since 0 <= `i` < N, it is still in bounds of `[T; N]`.
             let ptr = unsafe { slot.add(i) };
             // SAFETY: The pointer is derived from `slot` and thus satisfies the `__init`
             // requirements.
-            unsafe { init.__init(ptr) }?;
-            *init_count += 1;
+            match unsafe { init.__init(ptr) } {
+                Ok(()) => {}
+                Err(e) => {
+                    // SAFETY: The loop has initialized the elements `slot[0..i]` and since we
+                    // return `Err` below, `slot` will be considered uninitialized memory.
+                    unsafe { ptr::drop_in_place(ptr::slice_from_raw_parts_mut(slot, i)) };
+                    return Err(e);
+                }
+            }
         }
-        init_count.dismiss();
         Ok(())
     };
     // SAFETY: The initializer above initializes every element of the array. On failure it drops
@@ -1064,25 +1061,22 @@ where
 {
     let init = move |slot: *mut [T; N]| {
         let slot = slot.cast::<T>();
-        // Counts the number of initialized elements and when dropped drops that many elements from
-        // `slot`.
-        let mut init_count = ScopeGuard::new_with_data(0, |i| {
-            // We now free every element that has been initialized before.
-            // SAFETY: The loop initialized exactly the values from 0..i and since we
-            // return `Err` below, the caller will consider the memory at `slot` as
-            // uninitialized.
-            unsafe { ptr::drop_in_place(ptr::slice_from_raw_parts_mut(slot, i)) };
-        });
         for i in 0..N {
             let init = make_init(i);
             // SAFETY: Since 0 <= `i` < N, it is still in bounds of `[T; N]`.
             let ptr = unsafe { slot.add(i) };
             // SAFETY: The pointer is derived from `slot` and thus satisfies the `__init`
             // requirements.
-            unsafe { init.__pinned_init(ptr) }?;
-            *init_count += 1;
+            match unsafe { init.__pinned_init(ptr) } {
+                Ok(()) => {}
+                Err(e) => {
+                    // SAFETY: The loop has initialized the elements `slot[0..i]` and since we
+                    // return `Err` below, `slot` will be considered uninitialized memory.
+                    unsafe { ptr::drop_in_place(ptr::slice_from_raw_parts_mut(slot, i)) };
+                    return Err(e);
+                }
+            }
         }
-        init_count.dismiss();
         Ok(())
     };
     // SAFETY: The initializer above initializes every element of the array. On failure it drops
