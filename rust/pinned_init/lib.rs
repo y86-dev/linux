@@ -1,9 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-//! API to safely and fallibly initialize pinned `struct`s using in-place constructors.
+//! Library to safely and fallibly initialize pinned `struct`s using in-place constructors.
 //!
 //! It also allows in-place initialization of big `struct`s that would otherwise produce a stack
 //! overflow.
+//!
+//! There are cases when you want to in-place initialize a struct. For example when it is very big
+//! and moving it from the stack is not an option, because it is bigger than the stack itself.
+//! Another reason would be that you need the address of the object to initialize it. This stands
+//! in direct conflict with Rust's normal process of first initializing an object and then moving
+//! it into it's final memory location.
+//!
+//! This library allows you to do in-place initialization safely.
+//!
+//! # Nightly only
+//!
+//! This library requires unstable features and thus can only be used with a nightly compiler.
+//! The internally used features are:
+//! - `allocator_api`
+//! - `new_uninit`
+//!
+//! The user will be required to activate these features:
+//! - `allocator_api`
 //!
 //! # Overview
 //!
@@ -17,7 +35,7 @@
 //! - a custom function/macro returning an in-place constructor provided by someone else,
 //! - using the unsafe function [`pin_init_from_closure()`] to manually create an initializer.
 //!
-//! Aside from pinned initialization, this API also supports in-place construction without pinning,
+//! Aside from pinned initialization, this library also supports in-place construction without pinning,
 //! the macros/types/functions are generally named like the pinned variants without the `pin`
 //! prefix.
 //!
@@ -82,8 +100,8 @@
 //!
 //! ## Using a custom function/macro that returns an initializer
 //!
-//! Many types from the kernel supply a function/macro that returns an initializer, because the
-//! above method only works for types where you can access the fields.
+//! Many types that use this library supply a function/macro that returns an initializer, because
+//! the above method only works for types where you can access the fields.
 //!
 //! ```rust
 //! # #![feature(allocator_api)]
@@ -416,9 +434,9 @@ macro_rules! stack_try_pin_init {
 ///
 /// # Init-functions
 ///
-/// When working with this API it is often desired to let others construct your types without
+/// When working with this library it is often desired to let others construct your types without
 /// giving access to all fields. This is where you would normally write a plain function `new`
-/// that would return a new instance of your type. With this API that is also possible.
+/// that would return a new instance of your type. With this library that is also possible.
 /// However, there are a few extra things to keep in mind.
 ///
 /// To create an initializer function, simply declare it like this:
