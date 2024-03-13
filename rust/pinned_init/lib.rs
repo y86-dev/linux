@@ -2,11 +2,10 @@
 
 //! API to safely and fallibly initialize pinned `struct`s using in-place constructors.
 //!
+//! [Pinning][pinning] is Rust's way of ensuring data does not move.
+//!
 //! It also allows in-place initialization of big `struct`s that would otherwise produce a stack
 //! overflow.
-//!
-//! Most `struct`s from the [`sync`] module need to be pinned, because they contain self-referential
-//! `struct`s from C. [Pinning][pinning] is Rust's way of ensuring data does not move.
 //!
 //! # Overview
 //!
@@ -120,59 +119,54 @@
 //!   `slot` gets called.
 //!
 //! ```rust,ignore
-//! # #![allow(unreachable_pub, clippy::disallowed_names)]
-//! use kernel::{prelude::*, init, types::Opaque};
-//! use core::{ptr::addr_of_mut, marker::PhantomPinned, pin::Pin};
-//! # mod bindings {
-//! #     #![allow(non_camel_case_types)]
-//! #     pub struct foo;
-//! #     pub unsafe fn init_foo(_ptr: *mut foo) {}
-//! #     pub unsafe fn destroy_foo(_ptr: *mut foo) {}
-//! #     pub unsafe fn enable_foo(_ptr: *mut foo, _flags: u32) -> i32 { 0 }
-//! # }
-//! # // `Error::from_errno` is `pub(crate)` in the `kernel` crate, thus provide a workaround.
-//! # trait FromErrno {
-//! #     fn from_errno(errno: core::ffi::c_int) -> Error {
-//! #         // Dummy error that can be constructed outside the `kernel` crate.
-//! #         Error::from(core::fmt::Error)
-//! #     }
-//! # }
-//! # impl FromErrno for Error {}
+//! # #![feature(extern_types)]
+//! use pinned_init::*;
+//! use core::{ptr::addr_of_mut, marker::PhantomPinned, cell::UnsafeCell, pin::Pin};
+//! mod bindings {
+//!     extern "C" {
+//!         pub type foo;
+//!         pub fn init_foo(ptr: *mut foo);
+//!         pub fn destroy_foo(ptr: *mut foo);
+//!         #[must_use = "you must check the error return code"]
+//!         pub fn enable_foo(ptr: *mut foo, flags: u32) -> i32;
+//!     }
+//! }
+//!
 //! /// # Invariants
 //! ///
 //! /// `foo` is always initialized
 //! #[pin_data(PinnedDrop)]
 //! pub struct RawFoo {
 //!     #[pin]
-//!     foo: Opaque<bindings::foo>,
-//!     #[pin]
 //!     _p: PhantomPinned,
+//!     #[pin]
+//!     foo: UnsafeCell<bindings::foo>,
 //! }
 //!
 //! impl RawFoo {
-//!     pub fn new(flags: u32) -> impl PinInit<Self, Error> {
+//!     pub fn new(flags: u32) -> impl PinInit<Self, i32> {
 //!         // SAFETY:
 //!         // - when the closure returns `Ok(())`, then it has successfully initialized and
 //!         //   enabled `foo`,
 //!         // - when it returns `Err(e)`, then it has cleaned up before
 //!         unsafe {
-//!             init::pin_init_from_closure(move |slot: *mut Self| {
+//!             pin_init_from_closure(move |slot: *mut Self| {
 //!                 // `slot` contains uninit memory, avoid creating a reference.
 //!                 let foo = addr_of_mut!((*slot).foo);
 //!
 //!                 // Initialize the `foo`
-//!                 bindings::init_foo(Opaque::raw_get(foo));
+//!                 bindings::init_foo(UnsafeCell::raw_get(foo));
 //!
 //!                 // Try to enable it.
-//!                 let err = bindings::enable_foo(Opaque::raw_get(foo), flags);
+//!                 let err = bindings::enable_foo(UnsafeCell::raw_get(foo), flags);
 //!                 if err != 0 {
 //!                     // Enabling has failed, first clean up the foo and then return the error.
-//!                     bindings::destroy_foo(Opaque::raw_get(foo));
-//!                     return Err(Error::from_errno(err));
+//!                     bindings::destroy_foo(UnsafeCell::raw_get(foo));
+//!                     Err(err)
+//!                 } else {
+//!                     // All fields of `RawFoo` have been initialized, since `_p` is a ZST.
+//!                     Ok(())
 //!                 }
-//!
-//!                 // All fields of `RawFoo` have been initialized, since `_p` is a ZST.
-//!                 Ok(())
 //!             })
 //!         }
 //!     }
@@ -187,11 +181,6 @@
 //! }
 //! ```
 //!
-//! For the special case where initializing a field is a single FFI-function call that cannot fail,
-//! there exist the helper function [`Opaque::ffi_init`]. This function initialize a single
-//! [`Opaque`] field by just delegating to the supplied closure. You can use these in combination
-//! with [`pin_init!`].
-//!
 //! For more information on how to use [`pin_init_from_closure()`], take a look at the uses inside
 //! the `kernel` crate. The [`sync`] module is a good starting point.
 //!
@@ -205,16 +194,9 @@
 //! [`impl PinInit<Foo>`]: PinInit
 //! [`impl PinInit<T, E>`]: PinInit
 //! [`impl Init<T, E>`]: Init
-//! [`Opaque`]: kernel::types::Opaque
-//! [`Opaque::ffi_init`]: kernel::types::Opaque::ffi_init
 //! [`pin_data`]: ::macros::pin_data
 //! [`pin_init!`]: crate::pin_init!
 
-use crate::{
-    error::{self, Error},
-    sync::UniqueArc,
-    types::Opaque,
-};
 use alloc::boxed::Box;
 use core::{
     alloc::AllocError,
@@ -551,6 +533,7 @@ macro_rules! stack_try_pin_init {
 ///
 /// [`try_pin_init!`]: crate::try_pin_init
 /// [`NonNull<Self>`]: core::ptr::NonNull
+/// [`Error`]: kernel::error::Error
 // For a detailed example of how this macro works, see the module documentation of the hidden
 // module `__internal` inside of `./__internal.rs`.
 #[macro_export]
@@ -608,6 +591,8 @@ macro_rules! pin_init {
 ///     }
 /// }
 /// ```
+///
+/// [`Error`]: kernel::error::Error
 // For a detailed example of how this macro works, see the module documentation of the hidden
 // module `__internal` inside of `./__internal.rs`.
 #[macro_export]
@@ -657,6 +642,7 @@ macro_rules! try_pin_init {
 /// pin-initialize, use [`pin_init!`].
 ///
 /// [`try_init!`]: crate::try_init!
+/// [`Error`]: kernel::error::Error
 // For a detailed example of how this macro works, see the module documentation of the hidden
 // module `__internal` inside of `./__internal.rs`.
 #[macro_export]
@@ -708,6 +694,8 @@ macro_rules! init {
 ///     }
 /// }
 /// ```
+///
+/// [`Error`]: kernel::error::Error
 // For a detailed example of how this macro works, see the module documentation of the hidden
 // module `__internal` inside of `./__internal.rs`.
 #[macro_export]
@@ -780,41 +768,6 @@ pub unsafe trait PinInit<T: ?Sized, E = Infallible>: Sized {
     /// value.
     ///
     /// If `f` returns an error the value is dropped and the initializer will forward the error.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// # #![allow(clippy::disallowed_names)]
-    /// use kernel::{types::Opaque, pinned_init::pin_init_from_closure};
-    /// #[repr(C)]
-    /// struct RawFoo([u8; 16]);
-    /// extern {
-    ///     fn init_foo(_: *mut RawFoo);
-    /// }
-    ///
-    /// #[pin_data]
-    /// struct Foo {
-    ///     #[pin]
-    ///     raw: Opaque<RawFoo>,
-    /// }
-    ///
-    /// impl Foo {
-    ///     fn setup(self: Pin<&mut Self>) {
-    ///         pr_info!("Setting up foo");
-    ///     }
-    /// }
-    ///
-    /// let foo = pin_init!(Foo {
-    ///     raw <- unsafe {
-    ///         Opaque::ffi_init(|s| {
-    ///             init_foo(s);
-    ///         })
-    ///     },
-    /// }).pin_chain(|foo| {
-    ///     foo.setup();
-    ///     Ok(())
-    /// });
-    /// ```
     fn pin_chain<F>(self, f: F) -> ChainPinInit<Self, F, T, E>
     where
         F: FnOnce(Pin<&mut T>) -> Result<(), E>,
@@ -1113,37 +1066,10 @@ pub trait InPlaceInit<T>: Sized {
     where
         E: From<AllocError>;
 
-    /// Use the given pin-initializer to pin-initialize a `T` inside of a new smart pointer of this
-    /// type.
-    ///
-    /// If `T: !Unpin` it will not be able to move afterwards.
-    fn pin_init<E>(init: impl PinInit<T, E>) -> error::Result<Pin<Self>>
-    where
-        Error: From<E>,
-    {
-        // SAFETY: We delegate to `init` and only change the error type.
-        let init = unsafe {
-            pin_init_from_closure(|slot| init.__pinned_init(slot).map_err(|e| Error::from(e)))
-        };
-        Self::try_pin_init(init)
-    }
-
     /// Use the given initializer to in-place initialize a `T`.
     fn try_init<E>(init: impl Init<T, E>) -> Result<Self, E>
     where
         E: From<AllocError>;
-
-    /// Use the given initializer to in-place initialize a `T`.
-    fn init<E>(init: impl Init<T, E>) -> error::Result<Self>
-    where
-        Error: From<E>,
-    {
-        // SAFETY: We delegate to `init` and only change the error type.
-        let init = unsafe {
-            init_from_closure(|slot| init.__pinned_init(slot).map_err(|e| Error::from(e)))
-        };
-        Self::try_init(init)
-    }
 }
 
 impl<T> InPlaceInit<T> for Box<T> {
@@ -1176,19 +1102,21 @@ impl<T> InPlaceInit<T> for Box<T> {
     }
 }
 
-impl<T> InPlaceInit<T> for UniqueArc<T> {
+#[cfg(feature = "alloc")]
+impl<T> InPlaceInit<T> for Arc<T> {
     #[inline]
     fn try_pin_init<E>(init: impl PinInit<T, E>) -> Result<Pin<Self>, E>
     where
         E: From<AllocError>,
     {
-        let mut this = UniqueArc::try_new_uninit()?;
-        let slot = this.as_mut_ptr();
+        let mut this = Arc::try_new_uninit()?;
+        let slot = unsafe { Arc::get_mut_unchecked(&mut this) };
+        let slot = slot.as_mut_ptr();
         // SAFETY: When init errors/panics, slot will get deallocated but not dropped,
         // slot is valid and will not be moved, because we pin it later.
         unsafe { init.__pinned_init(slot)? };
-        // SAFETY: All fields have been initialized.
-        Ok(unsafe { this.assume_init() }.into())
+        // SAFETY: All fields have been initialized and this is the only `Arc` to that data.
+        Ok(unsafe { Pin::new_unchecked(this.assume_init()) })
     }
 
     #[inline]
@@ -1196,9 +1124,10 @@ impl<T> InPlaceInit<T> for UniqueArc<T> {
     where
         E: From<AllocError>,
     {
-        let mut this = UniqueArc::try_new_uninit()?;
-        let slot = this.as_mut_ptr();
-        // SAFETY: When init errors/panics, slot will get deallocated but not dropped,
+        let mut this = Arc::try_new_uninit()?;
+        let slot = unsafe { Arc::get_mut_unchecked(&mut this) };
+        let slot = slot.as_mut_ptr();
+        // SAFETY: when init errors/panics, slot will get deallocated but not dropped,
         // slot is valid.
         unsafe { init.__init(slot)? };
         // SAFETY: All fields have been initialized.
@@ -1291,8 +1220,6 @@ impl_zeroable! {
 
     // SAFETY: Type is allowed to take any value, including all zeros.
     {<T>} MaybeUninit<T>,
-    // SAFETY: Type is allowed to take any value, including all zeros.
-    {<T>} Opaque<T>,
 
     // SAFETY: `T: Zeroable` and `UnsafeCell` is `repr(transparent)`.
     {<T: ?Sized + Zeroable>} UnsafeCell<T>,
