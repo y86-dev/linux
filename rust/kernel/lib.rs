@@ -33,13 +33,13 @@ extern crate self as kernel;
 mod allocator;
 mod build_assert;
 pub mod error;
-#[path = "../pinned_init/lib.rs"]
-pub mod init;
 pub mod ioctl;
 #[cfg(CONFIG_KUNIT)]
 pub mod kunit;
 #[cfg(CONFIG_NET)]
 pub mod net;
+#[path = "../pinned_init/lib.rs"]
+pub mod pinned_init;
 pub mod prelude;
 pub mod print;
 mod static_assert;

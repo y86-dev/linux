@@ -2,7 +2,7 @@
 
 //! Kernel types.
 
-use crate::init::{self, PinInit};
+use crate::pinned_init::{self, PinInit};
 use alloc::boxed::Box;
 use core::{
     cell::UnsafeCell,
@@ -262,7 +262,7 @@ impl<T> Opaque<T> {
         // SAFETY: We contain a `MaybeUninit`, so it is OK for the `init_func` to not fully
         // initialize the `T`.
         unsafe {
-            init::pin_init_from_closure::<_, ::core::convert::Infallible>(move |slot| {
+            pinned_init::pin_init_from_closure::<_, ::core::convert::Infallible>(move |slot| {
                 init_func(Self::raw_get(slot));
                 Ok(())
             })
