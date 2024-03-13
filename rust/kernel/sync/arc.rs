@@ -18,7 +18,7 @@
 use crate::{
     bindings,
     error::{self, Error},
-    init::{self, InPlaceInit, Init, PinInit},
+    pinned_init::{self, InPlaceInit, Init, PinInit},
     try_init,
     types::{ForeignOwnable, Opaque},
 };
@@ -569,7 +569,7 @@ impl<T> UniqueArc<T> {
         let inner = Box::try_init::<AllocError>(try_init!(ArcInner {
             // SAFETY: There are no safety requirements for this FFI call.
             refcount: Opaque::new(unsafe { bindings::REFCOUNT_INIT(1) }),
-            data <- init::uninit::<T, AllocError>(),
+            data <- pinned_init::uninit::<T, AllocError>(),
         }? AllocError))?;
         Ok(UniqueArc {
             // INVARIANT: The newly-created object has a refcount of 1.

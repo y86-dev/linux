@@ -35,6 +35,6 @@ pub use super::error::{code::*, Error, Result};
 
 pub use super::{str::CStr, ThisModule};
 
-pub use super::init::{InPlaceInit, Init, PinInit};
+pub use super::pinned_init::{InPlaceInit, Init, PinInit};
 
 pub use super::current;
