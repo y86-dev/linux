@@ -498,6 +498,8 @@
 //! };
 //! ```
 
+pub use ::macros::paste;
+
 /// Creates a `unsafe impl<...> PinnedDrop for $type` block.
 ///
 /// See [`PinnedDrop`] for more information.
@@ -1110,7 +1112,7 @@ macro_rules! __init_internal {
             // information that is associated to already parsed fragments, so a path fragment
             // cannot be used in this position. Doing the retokenization results in valid rust
             // code.
-            ::kernel::macros::paste!($t::$get_data())
+            $crate::macros::paste!($t::$get_data())
         };
         // Ensure that `data` really is of type `$data` and help with type inference:
         let init = $crate::init::__internal::$data::make_closure::<_, __InitOk, $err>(
@@ -1190,7 +1192,7 @@ macro_rules! __init_internal {
         //
         // We rely on macro hygiene to make it impossible for users to access this local variable.
         // We use `paste!` to create new hygiene for `$field`.
-        ::kernel::macros::paste! {
+        $crate::macros::paste! {
             // SAFETY: We forget the guard later when initialization has succeeded.
             let [<$field>] = unsafe {
                 $crate::init::__internal::DropGuard::new(::core::ptr::addr_of_mut!((*$slot).$field))
@@ -1221,7 +1223,7 @@ macro_rules! __init_internal {
         //
         // We rely on macro hygiene to make it impossible for users to access this local variable.
         // We use `paste!` to create new hygiene for `$field`.
-        ::kernel::macros::paste! {
+        $crate::macros::paste! {
             // SAFETY: We forget the guard later when initialization has succeeded.
             let [<$field>] = unsafe {
                 $crate::init::__internal::DropGuard::new(::core::ptr::addr_of_mut!((*$slot).$field))
@@ -1253,7 +1255,7 @@ macro_rules! __init_internal {
         //
         // We rely on macro hygiene to make it impossible for users to access this local variable.
         // We use `paste!` to create new hygiene for `$field`.
-        ::kernel::macros::paste! {
+        $crate::macros::paste! {
             // SAFETY: We forget the guard later when initialization has succeeded.
             let [<$field>] = unsafe {
                 $crate::init::__internal::DropGuard::new(::core::ptr::addr_of_mut!((*$slot).$field))
@@ -1290,7 +1292,7 @@ macro_rules! __init_internal {
             // information that is associated to already parsed fragments, so a path fragment
             // cannot be used in this position. Doing the retokenization results in valid rust
             // code.
-            ::kernel::macros::paste!(
+            $crate::macros::paste!(
                 ::core::ptr::write($slot, $t {
                     $($acc)*
                     ..zeroed
@@ -1312,7 +1314,7 @@ macro_rules! __init_internal {
             // information that is associated to already parsed fragments, so a path fragment
             // cannot be used in this position. Doing the retokenization results in valid rust
             // code.
-            ::kernel::macros::paste!(
+            $crate::macros::paste!(
                 ::core::ptr::write($slot, $t {
                     $($acc)*
                 });
