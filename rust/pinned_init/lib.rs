@@ -211,11 +211,19 @@
 //! [`impl Init<T, E>`]: Init
 //! [`pin_init!`]: crate::pin_init!
 
-#![no_std]
+#![forbid(missing_docs, unsafe_op_in_unsafe_fn)]
+#![cfg_attr(any(not(feature = "std"), kernel), no_std)]
 #![feature(allocator_api)]
-#![feature(new_uninit)]
+#![cfg_attr(any(feature = "alloc", kernel), feature(new_uninit))]
+#![cfg_attr(feature = "alloc", feature(get_mut_unchecked))]
 
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
+#[cfg(any(feature = "alloc", kernel))]
 use alloc::boxed::Box;
+#[cfg(feature = "alloc")]
+use alloc::sync::Arc;
 use core::{
     alloc::AllocError,
     cell::UnsafeCell,
@@ -232,6 +240,10 @@ pub mod __internal;
 #[doc(hidden)]
 pub mod macros;
 
+#[cfg(not(kernel))]
+pub use pinned_init_macro::{pin_data, pinned_drop, Zeroable};
+
+#[cfg(kernel)]
 pub use ::macros::{pin_data, pinned_drop, Zeroable};
 
 #[allow(unused_extern_crates)]
@@ -1088,12 +1100,42 @@ pub trait InPlaceInit<T>: Sized {
     where
         E: From<AllocError>;
 
+    /// Use the given pin-initializer to pin-initialize a `T` inside of a new smart pointer of this
+    /// type.
+    ///
+    /// If `T: !Unpin` it will not be able to move afterwards.
+    #[cfg(not(kernel))]
+    fn pin_init(init: impl PinInit<T>) -> Result<Pin<Self>, AllocError> {
+        // SAFETY: We delegate to `init` and only change the error type.
+        let init = unsafe {
+            pin_init_from_closure(|slot| match init.__pinned_init(slot) {
+                Ok(()) => Ok(()),
+                Err(i) => match i {},
+            })
+        };
+        Self::try_pin_init(init)
+    }
+
     /// Use the given initializer to in-place initialize a `T`.
     fn try_init<E>(init: impl Init<T, E>) -> Result<Self, E>
     where
         E: From<AllocError>;
+
+    /// Use the given initializer to in-place initialize a `T`.
+    #[cfg(not(kernel))]
+    fn init(init: impl Init<T>) -> Result<Self, AllocError> {
+        // SAFETY: We delegate to `init` and only change the error type.
+        let init = unsafe {
+            init_from_closure(|slot| match init.__init(slot) {
+                Ok(()) => Ok(()),
+                Err(i) => match i {},
+            })
+        };
+        Self::try_init(init)
+    }
 }
 
+#[cfg(any(feature = "alloc", kernel))]
 impl<T> InPlaceInit<T> for Box<T> {
     #[inline]
     fn try_pin_init<E>(init: impl PinInit<T, E>) -> Result<Pin<Self>, E>
@@ -1223,8 +1265,11 @@ pub fn zeroed<T: Zeroable>() -> impl Init<T> {
 }
 
 macro_rules! impl_zeroable {
-    ($($({$($generics:tt)*})? $t:ty, )*) => {
-        $(unsafe impl$($($generics)*)? Zeroable for $t {})*
+    ($($(#[$attr:meta])* $({$($generics:tt)*})? $t:ty, )*) => {
+        $(
+            $(#[$attr])*
+            unsafe impl$($($generics)*)? Zeroable for $t {}
+        )*
     };
 }
 
@@ -1255,6 +1300,7 @@ impl_zeroable! {
     //
     // In this case we are allowed to use `T: ?Sized`, since all zeros is the `None` variant.
     {<T: ?Sized>} Option<NonNull<T>>,
+    #[cfg(any(feature = "alloc", kernel))]
     {<T: ?Sized>} Option<Box<T>>,
 
     // SAFETY: `null` pointer is valid.

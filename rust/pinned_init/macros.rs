@@ -498,7 +498,11 @@
 //! };
 //! ```
 
+#[cfg(kernel)]
 pub use ::macros::paste;
+
+#[cfg(not(kernel))]
+pub use ::paste::paste;
 
 /// Creates a `unsafe impl<...> PinnedDrop for $type` block.
 ///
@@ -1349,6 +1353,7 @@ macro_rules! __init_internal {
     };
 }
 
+#[cfg(kernel)]
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __derive_zeroable {

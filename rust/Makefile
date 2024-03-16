@@ -126,7 +126,7 @@ rustdoc-alloc: private rustc_target_flags = $(alloc-cfgs) \
 rustdoc-alloc: $(src)/alloc/lib.rs rustdoc-core rustdoc-compiler_builtins FORCE
 	+$(call if_changed,rustdoc)
 
-rustdoc-pinned_init: private rustc_target_flags = --extern alloc --extern macros
+rustdoc-pinned_init: private rustc_target_flags = --extern alloc --extern macros --cfg kernel
 rustdoc-pinned_init: $(src)/pinned_init/lib.rs rustdoc-alloc FORCE
 	+$(call if_changed,rustdoc)
 
@@ -451,7 +451,7 @@ $(obj)/alloc.o: private rustc_target_flags = $(alloc-cfgs)
 $(obj)/alloc.o: $(src)/alloc/lib.rs $(obj)/compiler_builtins.o FORCE
 	+$(call if_changed_dep,rustc_library)
 
-$(obj)/pinned_init.o: private rustc_target_flags = --extern alloc --extern macros
+$(obj)/pinned_init.o: private rustc_target_flags = --extern alloc --extern macros --cfg kernel
 $(obj)/pinned_init.o: $(src)/pinned_init/lib.rs $(obj)/alloc.o $(obj)/libmacros.so FORCE
 	+$(call if_changed_dep,rustc_library)
 
