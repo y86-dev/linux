@@ -209,8 +209,11 @@
 //! [`impl PinInit<Foo>`]: PinInit
 //! [`impl PinInit<T, E>`]: PinInit
 //! [`impl Init<T, E>`]: Init
-//! [`pin_data`]: ::macros::pin_data
 //! [`pin_init!`]: crate::pin_init!
+
+#![no_std]
+#![feature(allocator_api)]
+#![feature(new_uninit)]
 
 use alloc::boxed::Box;
 use core::{
@@ -228,6 +231,11 @@ use core::{
 pub mod __internal;
 #[doc(hidden)]
 pub mod macros;
+
+pub use ::macros::{pin_data, pinned_drop, Zeroable};
+
+#[allow(unused_extern_crates)]
+extern crate self as pinned_init;
 
 /// Initialize and pin a type directly on the stack.
 ///
@@ -272,8 +280,8 @@ pub mod macros;
 macro_rules! stack_pin_init {
     (let $var:ident $(: $t:ty)? = $val:expr) => {
         let val = $val;
-        let mut $var = ::core::pin::pin!($crate::pinned_init::__internal::StackInit$(::<$t>)?::uninit());
-        let mut $var = match $crate::pinned_init::__internal::StackInit::init($var, val) {
+        let mut $var = ::core::pin::pin!($crate::__internal::StackInit$(::<$t>)?::uninit());
+        let mut $var = match $crate::__internal::StackInit::init($var, val) {
             Ok(res) => res,
             Err(x) => {
                 let x: ::core::convert::Infallible = x;
@@ -352,13 +360,13 @@ macro_rules! stack_pin_init {
 macro_rules! stack_try_pin_init {
     (let $var:ident $(: $t:ty)? = $val:expr) => {
         let val = $val;
-        let mut $var = ::core::pin::pin!($crate::pinned_init::__internal::StackInit$(::<$t>)?::uninit());
-        let mut $var = $crate::pinned_init::__internal::StackInit::init($var, val);
+        let mut $var = ::core::pin::pin!($crate::__internal::StackInit$(::<$t>)?::uninit());
+        let mut $var = $crate::__internal::StackInit::init($var, val);
     };
     (let $var:ident $(: $t:ty)? =? $val:expr) => {
         let val = $val;
-        let mut $var = ::core::pin::pin!($crate::pinned_init::__internal::StackInit$(::<$t>)?::uninit());
-        let mut $var = $crate::pinned_init::__internal::StackInit::init($var, val)?;
+        let mut $var = ::core::pin::pin!($crate::__internal::StackInit$(::<$t>)?::uninit());
+        let mut $var = $crate::__internal::StackInit::init($var, val)?;
     };
 }
 
@@ -1175,8 +1183,6 @@ impl<T> InPlaceInit<T> for Arc<T> {
 /// # Safety
 ///
 /// This trait must be implemented via the [`pinned_drop`] proc-macro attribute on the impl.
-///
-/// [`pinned_drop`]: ::macros::pinned_drop
 pub unsafe trait PinnedDrop: __internal::HasPinData {
     /// Executes the pinned destructor of this type.
     ///

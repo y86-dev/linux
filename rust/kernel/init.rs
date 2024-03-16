@@ -16,7 +16,8 @@
 //!
 //! ```rust
 //! # #![allow(clippy::disallowed_names)]
-//! use kernel::{types::Opaque, pinned_init::pin_init_from_closure};
+//! use kernel::types::Opaque;
+//! use pinned_init::pin_init_from_closure;
 //! #[repr(C)]
 //! struct RawFoo([u8; 16]);
 //! extern {
@@ -49,7 +50,7 @@
 //!
 //! ```rust
 //! # #![allow(unreachable_pub, clippy::disallowed_names)]
-//! use kernel::{prelude::*, pinned_init, types::Opaque};
+//! use kernel::{prelude::*, types::Opaque};
 //! use core::{ptr::addr_of_mut, marker::PhantomPinned, pin::Pin};
 //! # mod bindings {
 //! #     #![allow(non_camel_case_types)]
@@ -115,7 +116,7 @@
 //! }
 //! ```
 //!
-//! [`pin_init!`]: kernel::pin_init
+//! [`pin_init!`]: ::pinned_init::pin_init
 //! [`sync`]: crate::sync
 //! [pinning]: https://doc.rust-lang.org/std/pin/index.html
 //! [`Opaque`]: kernel::types::Opaque
@@ -125,11 +126,11 @@
 
 use core::pin::Pin;
 
-use crate::pinned_init::{self, InPlaceInit, Init, PinInit, Zeroable};
 use crate::{
     error::{self, Error},
     types::Opaque,
 };
+use pinned_init::{self, InPlaceInit, Init, PinInit, Zeroable};
 
 /// Extension trait of [`InPlaceInit<T>`] allowing better interoperability with the custom
 /// [`Error`] type.
@@ -187,7 +188,8 @@ unsafe impl<T> Zeroable for Opaque<T> {}
 /// # Examples
 ///
 /// ```rust
-/// use kernel::{pinned_init::{PinInit, zeroed}, error::Error};
+/// use kernel::error::Error;
+/// use pinned_init::{PinInit, zeroed};
 /// struct BigBuf {
 ///     big: Box<[u8; 1024 * 1024 * 1024]>,
 ///     small: [u8; 1024 * 1024],
@@ -243,7 +245,8 @@ macro_rules! try_init {
 ///
 /// ```rust
 /// # #![feature(new_uninit)]
-/// use kernel::{pinned_init::{PinInit, zeroed}, error::Error};
+/// use kernel::error::Error;
+/// use pinned_init::{PinInit, zeroed};
 /// #[pin_data]
 /// struct BigBuf {
 ///     big: Box<[u8; 1024 * 1024 * 1024]>,

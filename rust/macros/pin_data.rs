@@ -70,7 +70,7 @@ pub(crate) fn pin_data(args: TokenStream, input: TokenStream) -> TokenStream {
         .collect::<Vec<_>>();
     // This should be the body of the struct `{...}`.
     let last = rest.pop();
-    let mut quoted = quote!(::kernel::__pin_data! {
+    let mut quoted = quote!(::pinned_init::__pin_data! {
         parse_input:
         @args(#args),
         @sig(#(#rest)*),
