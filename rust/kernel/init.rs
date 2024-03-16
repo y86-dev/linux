@@ -122,8 +122,6 @@
 //! [`Opaque`]: kernel::types::Opaque
 //! [`Opaque::ffi_init`]: kernel::types::Opaque::ffi_init
 
-#![allow(unused_macros)]
-
 use core::pin::Pin;
 
 use crate::{
@@ -172,6 +170,8 @@ impl<T, I: InPlaceInit<T>> InPlaceInitExt<T> for I {}
 // SAFETY: `Opaque` wraps a `MaybeUninit<T>` which allows any bit pattern.
 unsafe impl<T> Zeroable for Opaque<T> {}
 
+pub use crate::try_init;
+
 /// Construct an in-place fallible initializer for `struct`s.
 ///
 /// This macro defaults the error to [`Error`]. If you need [`Infallible`], then use
@@ -209,6 +209,7 @@ unsafe impl<T> Zeroable for Opaque<T> {}
 /// [`init!`]: pinned_init::init
 // For a detailed example of how this macro works, see the module documentation of the hidden
 // module `__internal` inside of `init/__internal.rs`.
+#[macro_export]
 macro_rules! try_init {
     ($(&$this:ident in)? $t:ident $(::<$($generics:ty),* $(,)?>)? {
         $($fields:tt)*
@@ -225,6 +226,8 @@ macro_rules! try_init {
         }? $err)
     };
 }
+
+pub use crate::try_pin_init;
 
 /// Construct an in-place, fallible pinned initializer for `struct`s.
 ///
@@ -269,6 +272,7 @@ macro_rules! try_init {
 /// [`pin_init!`]: ::pinned_init::pin_init
 // For a detailed example of how this macro works, see the module documentation of the hidden
 // module `__internal` inside of `init/__internal.rs`.
+#[macro_export]
 macro_rules! try_pin_init {
     ($(&$this:ident in)? $t:ident $(::<$($generics:ty),* $(,)?>)? {
         $($fields:tt)*

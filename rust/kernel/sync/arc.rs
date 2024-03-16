@@ -18,7 +18,7 @@
 use crate::{
     bindings,
     error::{self, Error},
-    init::InPlaceInitExt,
+    init::{try_init, InPlaceInitExt},
     types::{ForeignOwnable, Opaque},
 };
 use alloc::boxed::Box;
@@ -32,7 +32,7 @@ use core::{
     ptr::NonNull,
 };
 use macros::pin_data;
-use pinned_init::{try_init, InPlaceInit, Init, PinInit};
+use pinned_init::{InPlaceInit, Init, PinInit};
 
 mod std_vendor;
 

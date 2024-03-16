@@ -27,8 +27,8 @@ pub use super::build_assert;
 pub use super::dbg;
 pub use super::{pr_alert, pr_crit, pr_debug, pr_emerg, pr_err, pr_info, pr_notice, pr_warn};
 
-pub use super::init::InPlaceInitExt;
-pub use pinned_init::{init, pin_init, try_init, try_pin_init, InPlaceInit, Init, PinInit};
+pub use super::init::{try_init, try_pin_init, InPlaceInitExt};
+pub use pinned_init::{init, pin_init, InPlaceInit, Init, PinInit};
 
 pub use super::static_assert;
 
