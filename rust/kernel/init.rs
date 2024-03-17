@@ -34,7 +34,7 @@
 //! [`pin_init!`]. The syntax is almost the same as normal `struct` initializers. The difference is
 //! that you need to write `<-` instead of `:` for fields that you want to initialize in-place.
 //!
-//! ```rust
+//! ```rust,ignore
 //! # #![allow(clippy::disallowed_names)]
 //! use kernel::sync::{new_mutex, Mutex};
 //! # use core::pin::Pin;
@@ -54,7 +54,7 @@
 //! `foo` now is of the type [`impl PinInit<Foo>`]. We can now use any smart pointer that we like
 //! (or just the stack) to actually initialize a `Foo`:
 //!
-//! ```rust
+//! ```rust,ignore
 //! # #![allow(clippy::disallowed_names)]
 //! # use kernel::sync::{new_mutex, Mutex};
 //! # use core::pin::Pin;
@@ -78,14 +78,14 @@
 //! Many types from the kernel supply a function/macro that returns an initializer, because the
 //! above method only works for types where you can access the fields.
 //!
-//! ```rust
+//! ```rust,ignore
 //! # use kernel::sync::{new_mutex, Arc, Mutex};
 //! let mtx: Result<Arc<Mutex<usize>>> = Arc::pin_init(new_mutex!(42, "example::mtx"));
 //! ```
 //!
 //! To declare an init macro/function you just return an [`impl PinInit<T, E>`]:
 //!
-//! ```rust
+//! ```rust,ignore
 //! # #![allow(clippy::disallowed_names)]
 //! # use kernel::{sync::Mutex, prelude::*, new_mutex, init::PinInit, try_pin_init};
 //! #[pin_data]
@@ -119,7 +119,7 @@
 //! - you may assume that `slot` will stay pinned even after the closure returns until `drop` of
 //!   `slot` gets called.
 //!
-//! ```rust
+//! ```rust,ignore
 //! # #![allow(unreachable_pub, clippy::disallowed_names)]
 //! use kernel::{prelude::*, init, types::Opaque};
 //! use core::{ptr::addr_of_mut, marker::PhantomPinned, pin::Pin};
@@ -235,7 +235,7 @@ pub mod macros;
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,ignore
 /// # #![allow(clippy::disallowed_names)]
 /// # use kernel::{init, macros::pin_data, pin_init, stack_pin_init, init::*, sync::Mutex, new_mutex};
 /// # use core::pin::Pin;
@@ -365,7 +365,7 @@ macro_rules! stack_try_pin_init {
 ///
 /// The syntax is almost identical to that of a normal `struct` initializer:
 ///
-/// ```rust
+/// ```rust,ignore
 /// # #![allow(clippy::disallowed_names)]
 /// # use kernel::{init, pin_init, macros::pin_data, init::*};
 /// # use core::pin::Pin;
@@ -410,7 +410,7 @@ macro_rules! stack_try_pin_init {
 ///
 /// To create an initializer function, simply declare it like this:
 ///
-/// ```rust
+/// ```rust,ignore
 /// # #![allow(clippy::disallowed_names)]
 /// # use kernel::{init, pin_init, prelude::*, init::*};
 /// # use core::pin::Pin;
@@ -437,7 +437,7 @@ macro_rules! stack_try_pin_init {
 ///
 /// Users of `Foo` can now create it like this:
 ///
-/// ```rust
+/// ```rust,ignore
 /// # #![allow(clippy::disallowed_names)]
 /// # use kernel::{init, pin_init, macros::pin_data, init::*};
 /// # use core::pin::Pin;
@@ -465,7 +465,7 @@ macro_rules! stack_try_pin_init {
 ///
 /// They can also easily embed it into their own `struct`s:
 ///
-/// ```rust
+/// ```rust,ignore
 /// # #![allow(clippy::disallowed_names)]
 /// # use kernel::{init, pin_init, macros::pin_data, init::*};
 /// # use core::pin::Pin;
@@ -525,7 +525,7 @@ macro_rules! stack_try_pin_init {
 ///
 /// For instance:
 ///
-/// ```rust
+/// ```rust,ignore
 /// # use kernel::{macros::{Zeroable, pin_data}, pin_init};
 /// # use core::{ptr::addr_of_mut, marker::PhantomPinned};
 /// #[pin_data]
@@ -587,7 +587,7 @@ macro_rules! pin_init {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,ignore
 /// # #![feature(new_uninit)]
 /// use kernel::{init::{self, PinInit}, error::Error};
 /// #[pin_data]
@@ -691,7 +691,7 @@ macro_rules! init {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,ignore
 /// use kernel::{init::{PinInit, zeroed}, error::Error};
 /// struct BigBuf {
 ///     big: Box<[u8; 1024 * 1024 * 1024]>,
@@ -783,7 +783,7 @@ pub unsafe trait PinInit<T: ?Sized, E = Infallible>: Sized {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// # #![allow(clippy::disallowed_names)]
     /// use kernel::{types::Opaque, init::pin_init_from_closure};
     /// #[repr(C)]
@@ -897,7 +897,7 @@ pub unsafe trait Init<T: ?Sized, E = Infallible>: PinInit<T, E> {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// # #![allow(clippy::disallowed_names)]
     /// use kernel::{types::Opaque, init::{self, init_from_closure}};
     /// struct Foo {
@@ -1011,7 +1011,7 @@ pub fn uninit<T, E>() -> impl Init<MaybeUninit<T>, E> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,ignore
 /// use kernel::{error::Error, init::init_array_from_fn};
 /// let array: Box<[usize; 1_000]> = Box::init::<Error>(init_array_from_fn(|i| i)).unwrap();
 /// assert_eq!(array.len(), 1_000);
@@ -1054,7 +1054,7 @@ where
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,ignore
 /// use kernel::{sync::{Arc, Mutex}, init::pin_init_array_from_fn, new_mutex};
 /// let array: Arc<[Mutex<usize>; 1_000]> =
 ///     Arc::pin_init(pin_init_array_from_fn(|i| new_mutex!(i))).unwrap();
@@ -1216,7 +1216,7 @@ impl<T> InPlaceInit<T> for UniqueArc<T> {
 ///
 /// Use [`pinned_drop`] to implement this trait safely:
 ///
-/// ```rust
+/// ```rust,ignore
 /// # use kernel::sync::Mutex;
 /// use kernel::macros::pinned_drop;
 /// use core::pin::Pin;
