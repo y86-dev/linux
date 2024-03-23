@@ -22,13 +22,31 @@ with import <nixpkgs> {};
            llvmPackages_16.libllvm
            # libelf
            # rust-bindgen
-           (rust-bindgen.override {
-               rust-bindgen-unwrapped = (pkgs.rust-bindgen-unwrapped.override { clang = clang_16; });
-           })
+           (let
+  rust-bindgen-unwrapped = pkgs.rust-bindgen-unwrapped.overrideAttrs (prev: rec {
+    version = "0.69.1";
+    src = pkgs.fetchCrate {
+      pname = "bindgen-cli";
+      inherit version;
+      sha256 = "sha256-zqyIc07RLti2xb23bWzL7zFjreEZuUstnYSp+jUX8Lw=";
+    };
+    cargoDeps = prev.cargoDeps.overrideAttrs {
+      name = "${prev.pname}-${version}-vendor.tar.gz";
+      inherit src;
+      outputHash = "sha256-o1B8jq7Ze97pBLE9gvNsmCaD/tsW4f6DL0upzQkxbA4=";
+    };
+  });
+in
+  rust-bindgen.override {inherit rust-bindgen-unwrapped;})
+
+           #(rust-bindgen.override {
+           #    rust-bindgen-unwrapped = (pkgs.rust-bindgen-unwrapped.override { clang = clang_16; });
+           #})
            perl
            sphinx
            graphviz
            texlive.combined.scheme-full
        ];
+       hardeningDisable = pkgs.linux.hardeningDisable ++ [ "strictoverflow" ];
      };
 }
