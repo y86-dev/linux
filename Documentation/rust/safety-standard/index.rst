@@ -221,6 +221,20 @@ similarly to :ref:`unsafe-Blocks`::
     // SAFETY: <justification>
     unsafe impl Foo for Bar {}
 
+Guarantees
+==========
+
+Functions are also allowed to declare certain guarantees that ``unsafe`` code is able to rely upon.
+For example when returning a raw pointer, a common guarantee would be to state that it is valid. See
+guarantee.rst for more info. Importantly, guarantees can also be given by safe functions.
+
+Type Invariants
+---------------
+
+Type invariants are a kind of guarantee. Like their name suggests, they always hold (invariant --
+never changing). They can only be specified on ``struct``, ``enum`` or ``union`` types. See
+type-invariants.rst for more info.
+
 General Rules
 =============
 
@@ -246,6 +260,8 @@ Further Pages
    :maxdepth: 1
 
    examples
+   guarantee
+   type-invariants
 
 .. only::  subproject and html
 
