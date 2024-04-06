@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 
-use proc_macro::{token_stream, Group, TokenStream, TokenTree};
+use proc_macro2::{token_stream, Group, TokenStream, TokenTree};
 
 pub(crate) fn try_ident(it: &mut token_stream::IntoIter) -> Option<String> {
     if let Some(TokenTree::Ident(ident)) = it.next() {
@@ -166,7 +166,7 @@ pub(crate) fn parse_generics(input: TokenStream) -> (Generics, Vec<TokenTree>) {
                     1 => {
                         // Here depending on the token, it might be a generic variable name.
                         match tt.clone() {
-                            TokenTree::Ident(i) if at_start && i.to_string() == "const" => {
+                            TokenTree::Ident(i) if at_start && i == "const" => {
                                 let Some(name) = toks.next() else {
                                     // Parsing error.
                                     break;
