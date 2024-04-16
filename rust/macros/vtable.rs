@@ -19,11 +19,11 @@ macro_rules! handle_item {
             }
         }
         let item = if $with_comment {
-            parse_quote!(
-                    /// A marker to prevent implementors from forgetting to use the [`#[vtable]`](vtable)
-                    /// attribute macro when implementing this trait.
-                    const USE_VTABLE_ATTR: () = ();
-            )
+            parse_quote! {
+                /// A marker to prevent implementors from forgetting to use the [`#[vtable]`](vtable)
+                /// attribute macro when implementing this trait.
+                const USE_VTABLE_ATTR: () = ();
+            }
         } else {
             parse_quote!(const USE_VTABLE_ATTR: () = ();)
         };
