@@ -292,21 +292,9 @@ pub fn pin_data(args: TokenStream, input: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn pinned_drop(args: TokenStream, input: TokenStream) -> TokenStream {
     parse_macro_input!(args as syn::parse::Nothing);
-    match syn::parse(input.clone()) {
-        Ok(input) => match pinned_drop::pinned_drop(input) {
-            Ok(output) => output,
-            Err((err, impl_)) => {
-                let err = err.into_compile_error();
-                quote! {
-                    #impl_
-                    #err
-                }
-            }
-        }
-        .into(),
-        // Let the compiler handle the error.
-        Err(_) => input,
-    }
+    pinned_drop::pinned_drop(parse_macro_input!(input))
+        .unwrap_or_else(|e| e.into_compile_error())
+        .into()
 }
 
 /// Paste identifiers together.
