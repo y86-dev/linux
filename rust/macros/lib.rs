@@ -262,13 +262,9 @@ pub fn concat_idents(ts: TokenStream) -> TokenStream {
 //  ^ cannot use direct link, since `kernel` is not a dependency of `macros`.
 #[proc_macro_attribute]
 pub fn pin_data(args: TokenStream, input: TokenStream) -> TokenStream {
-    match syn::parse(input.clone()) {
-        Ok(input) => pin_data::pin_data(args.into(), input)
-            .unwrap_or_else(|e| e.into_compile_error())
-            .into(),
-        // Let the compiler handle the error.
-        Err(_) => input,
-    }
+    pin_data::pin_data(args.into(), parse_macro_input!(input))
+        .unwrap_or_else(|e| e.into_compile_error())
+        .into()
 }
 
 /// Used to implement `PinnedDrop` safely.

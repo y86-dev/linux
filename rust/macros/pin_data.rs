@@ -4,9 +4,8 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
     parse_quote,
-    spanned::Spanned,
     visit_mut::{visit_path_segment_mut, VisitMut},
-    Error, Field, Ident, Item, ItemStruct, PathSegment, Result, Token, Type, TypePath, WhereClause,
+    Error, Field, ItemStruct, PathSegment, Result, Type, TypePath, WhereClause,
 };
 
 pub(crate) fn pin_data(args: TokenStream, mut struct_: ItemStruct) -> Result<TokenStream> {
@@ -34,14 +33,10 @@ pub(crate) fn pin_data(args: TokenStream, mut struct_: ItemStruct) -> Result<Tok
     }
     Ok(quote! {
         #struct_
-
         #errors
-
         const _: () = {
             #the_pin_data
-
             #unpin_impl
-
             #drop_impl
         };
     })
@@ -57,8 +52,7 @@ impl VisitMut for SelfReplacer {
             visit_path_segment_mut(self, seg);
         }
     }
-
-    fn visit_item_mut(&mut self, _: &mut Item) {
+    fn visit_item_mut(&mut self, _: &mut syn::Item) {
         // Do not descend into items, since items reset/change what `Self` refers to.
     }
 }
@@ -139,6 +133,7 @@ fn generate_the_pin_data(
         // We declare this struct which will host all of the projection function for our type. It
         // will be invariant over all generic parameters which are inherited from the struct.
         #vis struct __ThePinData #generics
+            #whr
         {
             __phantom: ::core::marker::PhantomData<
                 fn(#ident #ty_generics) -> #ident #ty_generics
@@ -194,14 +189,9 @@ fn unpin_impl(
     }: &ItemStruct,
 ) -> TokenStream {
     let generics_with_pinlt = {
-        let span = generics.span();
         let mut g = generics.clone();
         g.params.insert(0, parse_quote!('__pin));
-        let whr = g.make_where_clause();
-        whr.where_token = Token![where](span);
-        if !whr.predicates.empty_or_trailing() {
-            whr.predicates.push_punct(Default::default());
-        }
+        let _ = g.make_where_clause();
         g
     };
     let (
@@ -228,7 +218,10 @@ fn unpin_impl(
         // This struct will be used for the unpin analysis. It is needed, because only structurally
         // pinned fields are relevant whether the struct should implement `Unpin`.
         #[allow(dead_code)] // The fields below are never used.
-        struct __Unpin #generics_with_pinlt {
+        struct __Unpin #generics_with_pinlt
+        #where_token
+            #predicates
+        {
             __phantom_pin: ::core::marker::PhantomData<fn(&'__pin ()) -> &'__pin ()>,
             __phantom: ::core::marker::PhantomData<
                 fn(#ident #ty_generics) -> #ident #ty_generics
@@ -236,10 +229,11 @@ fn unpin_impl(
             #(#pinned_fields),*
         }
 
+        #[doc(hidden)]
         impl #impl_generics_with_pinlt ::core::marker::Unpin for #ident #ty_generics
         #where_token
-            #predicates
             __Unpin #ty_generics_with_pinlt: ::core::marker::Unpin,
+            #predicates
         {}
     }
 }
@@ -251,7 +245,7 @@ fn drop_impl(
     args: TokenStream,
 ) -> Result<TokenStream> {
     let (impl_generics, ty_generics, whr) = generics.split_for_impl();
-    let has_pinned_drop = match syn::parse2::<Option<Ident>>(args.clone()) {
+    let has_pinned_drop = match syn::parse2::<Option<syn::Ident>>(args.clone()) {
         Ok(None) => false,
         Ok(Some(ident)) if ident == "PinnedDrop" => true,
         _ => {
@@ -297,7 +291,7 @@ fn drop_impl(
             // `PinnedDrop` as the parameter to `#[pin_data]`.
             #[allow(non_camel_case_types)]
             trait UselessPinnedDropImpl_you_need_to_specify_PinnedDrop {}
-            impl<T: ::kernel::init::PinnedDrop + ::core::marker::Sized>
+            impl<T: ::kernel::init::PinnedDrop + ?::core::marker::Sized>
                 UselessPinnedDropImpl_you_need_to_specify_PinnedDrop for T {}
             impl #impl_generics
                 UselessPinnedDropImpl_you_need_to_specify_PinnedDrop for #ident #ty_generics
