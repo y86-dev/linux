@@ -432,12 +432,9 @@ pub fn paste(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(Zeroable)]
 pub fn derive_zeroable(input: TokenStream) -> TokenStream {
     let raw_input = input.clone().into();
-    let input = parse_macro_input!(input as DeriveInput);
-    match zeroable::derive(input, raw_input) {
-        Ok(output) => output,
-        Err(err) => err.into_compile_error(),
-    }
-    .into()
+    zeroable::derive(parse_macro_input!(input), raw_input)
+        .unwrap_or_else(|e| e.into_compile_error())
+        .into()
 }
 
 /// Universal in-place initialization macro.
