@@ -445,6 +445,7 @@ pub fn derive_zeroable(input: TokenStream) -> TokenStream {
 /// Please use `[try_][pin_]init!` instead. This macro implements their behavior in a general way.
 #[proc_macro]
 pub fn primitive_init(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as primitive_init::InPlaceInitializer);
-    primitive_init::primitive_init(input).into()
+    primitive_init::primitive_init(parse_macro_input!(input))
+        .unwrap_or_else(|e| e.into_compile_error())
+        .into()
 }

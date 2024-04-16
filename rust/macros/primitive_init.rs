@@ -1,14 +1,60 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use proc_macro2::{Ident, Span, TokenStream};
-use quote::{format_ident, quote};
+use quote::{format_ident, quote, quote_spanned};
 use syn::{
     braced,
     parse::{Parse, ParseStream},
     punctuated::Punctuated,
     spanned::Spanned,
-    token, Expr, ExprCall, ExprPath, Path, Result, Token, Type,
+    token, Error, Expr, ExprCall, ExprPath, Path, Result, Token, Type,
 };
+
+pub(crate) struct InPlaceInitializer {
+    this: Option<This>,
+    pin: Option<kw::pin>,
+    path: Path,
+    _brace_token: token::Brace,
+    fields: Punctuated<FieldInitializer, Token![,]>,
+    rest: Option<(Token![..], Expr)>,
+    _question: Token![?],
+    error: Type,
+}
+
+struct This {
+    _and_token: Token![&],
+    ident: Ident,
+    _in_token: Token![in],
+}
+
+mod kw {
+    syn::custom_keyword!(pin);
+}
+
+enum FieldInitializer {
+    Value {
+        ident: Ident,
+        value: Option<(Token![:], Expr)>,
+    },
+    Init {
+        ident: Ident,
+        _larrow: Token![<-],
+        value: Expr,
+    },
+}
+
+impl FieldInitializer {
+    fn ident(&self) -> &Ident {
+        match self {
+            FieldInitializer::Value { ident, .. } | FieldInitializer::Init { ident, .. } => ident,
+        }
+    }
+}
+
+enum InitKind {
+    Normal,
+    Zeroing,
+}
 
 pub(crate) fn primitive_init(
     InPlaceInitializer {
@@ -20,7 +66,7 @@ pub(crate) fn primitive_init(
         error,
         ..
     }: InPlaceInitializer,
-) -> TokenStream {
+) -> Result<TokenStream> {
     let (has_data_trait, data_trait, get_data, from_closure, use_data) = match pin {
         Some(_) => (
             format_ident!("HasPinData"),
@@ -38,13 +84,9 @@ pub(crate) fn primitive_init(
         ),
     };
 
-    let init_kind = match get_init_kind(rest) {
-        Ok(init_kind) => init_kind,
-        Err(err) => return err.to_compile_error(),
-    };
+    let init_kind = get_init_kind(rest)?;
     let zeroable_check = match init_kind {
         InitKind::Normal => quote! {},
-
         InitKind::Zeroing => quote! {
             // The user specified `..Zeroable::zeroed()` at the end of the list of fields.
             // Therefore we check if the struct implements `Zeroable` and then zero the memory.
@@ -59,6 +101,7 @@ pub(crate) fn primitive_init(
             unsafe { ::core::ptr::write_bytes(slot, 0, 1) };
         },
     };
+
     let this = match this {
         None => quote!(),
         Some(This { ident, .. }) => quote! {
@@ -69,7 +112,7 @@ pub(crate) fn primitive_init(
     };
     let init_fields = init_fields(&fields, use_data);
     let field_check = make_field_check(&fields, init_kind, &path);
-    quote! {{
+    Ok(quote! {{
         // We do not want to allow arbitrary returns, so we declare this type as the `Ok` return
         // type and shadow it later when we insert the arbitrary user code. That way there will be
         // no possibility of returning without `unsafe`.
@@ -105,35 +148,25 @@ pub(crate) fn primitive_init(
         };
         let init = unsafe { ::kernel::init::#from_closure::<_, #error>(init) };
         init
-    }}
-}
-
-enum InitKind {
-    Normal,
-    Zeroing,
+    }})
 }
 
 fn get_init_kind(rest: Option<(Token![..], Expr)>) -> Result<InitKind> {
     let Some((dotdot, expr)) = rest else {
         return Ok(InitKind::Normal);
     };
-    let tokens = quote!(#dotdot #expr);
-    macro_rules! bail {
-        () => {{
-            return Err(syn::Error::new_spanned(
-                tokens,
-                "Expected one of the following:\n- Nothing.\n- `..Zeroable::zeroed()`.",
-            ));
-        }};
-    }
+    let error = Error::new_spanned(
+        quote!(#dotdot #expr),
+        "Expected one of the following:\n- Nothing.\n- `..Zeroable::zeroed()`.",
+    );
     let Expr::Call(ExprCall {
         func, args, attrs, ..
     }) = expr
     else {
-        bail!()
+        return Err(error);
     };
     if !args.is_empty() || !attrs.is_empty() {
-        bail!()
+        return Err(error);
     }
     match *func {
         Expr::Path(ExprPath {
@@ -153,10 +186,11 @@ fn get_init_kind(rest: Option<(Token![..], Expr)>) -> Result<InitKind> {
         {
             Ok(InitKind::Zeroing)
         }
-        _ => bail!(),
+        _ => Err(error),
     }
 }
 
+/// Generate the code that initializes the fields of the struct using the initializers in `field`.
 fn init_fields(fields: &Punctuated<FieldInitializer, Token![,]>, use_data: bool) -> TokenStream {
     let mut guards = vec![];
     let mut res = TokenStream::new();
@@ -168,16 +202,22 @@ fn init_fields(fields: &Punctuated<FieldInitializer, Token![,]>, use_data: bool)
             FieldInitializer::Value { ident, value } => {
                 let mut value_ident = ident.clone();
                 let value = value.as_ref().map(|value| &value.1).map(|value| {
+                    // Setting the span of `value_ident` to `value`'s span improves error messages
+                    // when the type of `value` is wrong.
                     value_ident.set_span(value.span());
                     quote!(let #value_ident = #value;)
                 });
+                // Again span for better diagnostics
+                let write = quote_spanned! {ident.span()=>
+                    ::core::ptr::write
+                };
                 quote! {
                     {
                         #value
                         // Initialize the field.
                         //
                         // SAFETY: The memory at `slot` is uninitialized.
-                        unsafe { ::core::ptr::write(::core::ptr::addr_of_mut!((*slot).#ident), #value_ident) };
+                        unsafe { #write(::core::ptr::addr_of_mut!((*slot).#ident), #value_ident) };
                     }
                 }
             }
@@ -232,6 +272,7 @@ fn init_fields(fields: &Punctuated<FieldInitializer, Token![,]>, use_data: bool)
     }
 }
 
+/// Generate the check for ensuring that every field has been initialized.
 fn make_field_check(
     fields: &Punctuated<FieldInitializer, Token![,]>,
     init_kind: InitKind,
@@ -275,23 +316,8 @@ fn make_field_check(
     }
 }
 
-mod kw {
-    syn::custom_keyword!(pin);
-}
-
-pub(crate) struct InPlaceInitializer {
-    this: Option<This>,
-    pin: Option<kw::pin>,
-    path: Path,
-    _brace_token: token::Brace,
-    fields: Punctuated<FieldInitializer, Token![,]>,
-    rest: Option<(Token![..], Expr)>,
-    _question: Token![?],
-    error: Type,
-}
-
 impl Parse for InPlaceInitializer {
-    fn parse(input: ParseStream<'_>) -> Result<Self> {
+    fn parse(input: ParseStream) -> Result<Self> {
         let content;
         Ok(Self {
             this: input.peek(Token![&]).then(|| input.parse()).transpose()?,
@@ -330,14 +356,8 @@ impl Parse for InPlaceInitializer {
     }
 }
 
-struct This {
-    _and_token: Token![&],
-    ident: Ident,
-    _in_token: Token![in],
-}
-
 impl Parse for This {
-    fn parse(input: ParseStream<'_>) -> Result<Self> {
+    fn parse(input: ParseStream) -> Result<Self> {
         Ok(Self {
             _and_token: input.parse()?,
             ident: input.parse()?,
@@ -346,28 +366,8 @@ impl Parse for This {
     }
 }
 
-enum FieldInitializer {
-    Value {
-        ident: Ident,
-        value: Option<(Token![:], Expr)>,
-    },
-    Init {
-        ident: Ident,
-        _larrow: Token![<-],
-        value: Expr,
-    },
-}
-
-impl FieldInitializer {
-    fn ident(&self) -> &Ident {
-        match self {
-            FieldInitializer::Value { ident, .. } | FieldInitializer::Init { ident, .. } => ident,
-        }
-    }
-}
-
 impl Parse for FieldInitializer {
-    fn parse(input: ParseStream<'_>) -> Result<Self> {
+    fn parse(input: ParseStream) -> Result<Self> {
         let ident = input.parse()?;
         let lookahead = input.lookahead1();
         Ok(if lookahead.peek(Token![<-]) {
