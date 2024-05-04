@@ -17,6 +17,7 @@ case $1 in
         pushd "$2"
         b4 shazam "$2"
         git review rust-next
+        echo "Press q to finish review (the worktree will be cleaned up)." | less
         popd
         git worktree remove "$2"
         ;;
@@ -39,7 +40,29 @@ case $1 in
         fi
         git review "$4"
         popd
+        echo "Press q to finish review (the worktree will be cleaned up)." | less
         git worktree remove "$3"
+        ;;
+    "mail-diff")
+        if [ ! $# -eq 5 ]; then
+            echo "'mail-diff' command expects exactly 4 arguments: \`mail-diff [old-version] [new-version] [mail] [review-base]\`"
+            exit 1
+        fi
+        b4 mbox "$4"
+        rm "$4.mbx"
+        git worktree add --detach "$4-v$2" rust-next
+        git worktree add --detach "$4-v$3" rust-next
+        pushd "$4-v$2"
+        b4 shazam --use-version "$2" "$4"
+        v1_head=$(git rev-parse HEAD)
+        popd
+        pushd "$4-v$3"
+        b4 shazam --use-version "$3" "$4"
+        v2_head=$(git rev-parse HEAD)
+        git range-diff "$5" "$v1_head" "$v2_head"
+        popd
+        git worktree remove "$4-v$2"
+        git worktree remove "$4-v$3"
         ;;
     *)
         echo "Invalid command. Please provide either 'mail' or 'branch'."
