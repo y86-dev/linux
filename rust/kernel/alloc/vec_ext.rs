@@ -73,6 +73,65 @@ pub trait VecExt<T>: Sized {
     /// # Ok::<(), Error>(())
     /// ```
     fn reserve(&mut self, additional: usize, flags: Flags) -> Result<(), AllocError>;
+
+    /// Resizes the vector such that its length becomes `new_len`.
+    ///
+    /// If the size increases, the elements are filled with the result of `f` called repeatedly.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// #[derive(PartialEq)]
+    /// struct NonClonable(u32);
+    ///
+    /// let mut v = Vec::new();
+    /// v.push(NonClonable(1), GFP_KERNEL)?;
+    ///
+    /// let mut next = 2;
+    /// v.resize_with(4, GFP_KERNEL, || {
+    ///     next += 1;
+    ///     NonClonable(next - 1)
+    /// })?;
+    /// assert_eq!(&v, &[NonClonable(1), NonClonable(2), NonClonable(3), NonClonable(4)]);
+    ///
+    /// // Shrink the vector.
+    /// v.resize_with(3, GFP_KERNEL, || unreachable!())?;
+    /// assert_eq!(&v, &[NonClonable(1), NonClonable(2), NonClonable(3)]);
+    ///
+    /// # Ok::<(), Error>(())
+    /// ```
+    fn resize_with(
+        &mut self,
+        new_len: usize,
+        flags: Flags,
+        f: impl FnMut() -> T,
+    ) -> Result<(), AllocError>;
+
+    /// Resizes the vector such that its length becomes `new_len`.
+    ///
+    /// If the size increases, the elements are filled with clones of `value`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let mut v = Vec::new();
+    /// v.push(1, GFP_KERNEL)?;
+    ///
+    /// v.resize(5, 2, GFP_KERNEL)?;
+    /// assert_eq!(&v, &[1, 2, 2, 2, 2]);
+    ///
+    /// // Shrink the vector.
+    /// v.resize(3, 0xff, GFP_KERNEL)?;
+    /// assert_eq!(&v, &[1, 2, 2]);
+    ///
+    /// # Ok::<(), Error>(())
+    /// ```
+    fn resize(&mut self, new_len: usize, value: T, flags: Flags) -> Result<(), AllocError>
+    where
+        T: Clone,
+    {
+        self.resize_with(new_len, flags, || value.clone())
+    }
 }
 
 impl<T> VecExt<T> for Vec<T> {
@@ -156,6 +215,35 @@ impl<T> VecExt<T> for Vec<T> {
             unsafe { rebuild(self, new_ptr.cast::<T>(), len, new_cap) };
             Ok(())
         }
+    }
+
+    fn resize_with(
+        &mut self,
+        new_len: usize,
+        flags: Flags,
+        mut f: impl FnMut() -> T,
+    ) -> Result<(), AllocError> {
+        let len = self.len();
+        if new_len <= len {
+            // SAFETY: We are shrinking the vector, so the remaining elements continue initalised.
+            unsafe { self.set_len(new_len) };
+            for s in &mut self.spare_capacity_mut()[..len - new_len] {
+                // SAFETY: The elements were valid and initialised before shrinking, it is safe to
+                // drop them here.
+                unsafe { ptr::drop_in_place(s.as_mut_ptr()) };
+            }
+        } else {
+            let extra = new_len - len;
+            <Self as VecExt<_>>::reserve(self, extra, flags)?;
+            for s in &mut self.spare_capacity_mut()[..extra] {
+                s.write(f());
+            }
+            // SAFETY: We just initialised the first `extra` spare entries, so it is safe to
+            // increase the length by `extra`. We also know that the new length is <= capacity
+            // because of the previous call to `reserve` above.
+            unsafe { self.set_len(new_len) };
+        }
+        Ok(())
     }
 }
 
