@@ -156,6 +156,7 @@ macro_rules! container_of {
     ($ptr:expr, $type:ty, $($f:tt)*) => {{
         let ptr = $ptr as *const _ as *const u8;
         let offset: usize = ::core::mem::offset_of!($type, $($f)*);
-        ptr.sub(offset) as *const $type
+        $crate::build_assert!(offset <= isize::MAX as usize);
+        ptr.wrapping_sub(offset) as *const $type
     }}
 }
