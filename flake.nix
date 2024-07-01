@@ -1,16 +1,35 @@
 {
+  nixConfig = {
+    extra-substituters = [
+      "https://nix-community.cachix.org"
+    ];
+    extra-trusted-public-keys = [
+      "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+    ];
+  };
   inputs = {
     nixpkgs.url = "github:nixoS/nixpkgs/nixos-unstable";
+    fenix = {
+      url = "github:nix-community/fenix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
-  outputs = {nixpkgs, ...}: let
+  outputs = {
+    nixpkgs,
+    fenix,
+    ...
+  }: let
     system = "x86_64-linux";
     pkgs = import nixpkgs {
+      overlays = [fenix.overlays.default];
       inherit system;
     };
   in {
     devShells."${system}".default = pkgs.mkShell {
       name = "kernel";
       packages = with pkgs; [
+        fenix.packages."${system}".stable.toolchain
+        rust-analyzer-nightly
         stdenv
         git
         gnumake
