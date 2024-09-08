@@ -10,6 +10,7 @@ use super::{
     address_space, dentry, dentry::DEntry, file, mode, sb::SuperBlock, FileSystem, Offset,
     PageOffset, UnspecifiedFS,
 };
+use crate::data::Untrusted;
 use crate::error::{code::*, from_err_ptr, Result};
 use crate::types::{ARef, AlwaysRefCounted, Either, ForeignOwnable, Lockable, Locked, Opaque};
 use crate::{
@@ -171,7 +172,7 @@ impl<T: FileSystem + ?Sized> INode<T> {
         &self,
         first: Offset,
         len: Offset,
-        mut cb: impl FnMut(&[u8]) -> Result<Option<U>>,
+        mut cb: impl FnMut(&Untrusted<[u8]>) -> Result<Option<U>>,
     ) -> Result<Option<U>> {
         if first >= self.size() {
             return Ok(None);
@@ -184,7 +185,7 @@ impl<T: FileSystem + ?Sized> INode<T> {
             // SAFETY: The safety requirements of this function satisfy those of `mapped_folio`.
             let data = unsafe { self.mapped_folio(next)? };
             let avail = cmp::min(data.len(), remain.try_into().unwrap_or(usize::MAX));
-            let ret = cb(&data[..avail])?;
+            let ret = cb(Untrusted::new_untrusted_ref(&data[..avail]))?;
             if ret.is_some() {
                 return Ok(ret);
             }
@@ -315,7 +316,7 @@ impl<T: FileSystem + ?Sized, U: Deref<Target = INode<T>>> Locked<U, ReadSem> {
         &self,
         first: Offset,
         len: Offset,
-        cb: impl FnMut(&[u8]) -> Result<Option<V>>,
+        cb: impl FnMut(&Untrusted<[u8]>) -> Result<Option<V>>,
     ) -> Result<Option<V>> {
         if T::IS_UNSPECIFIED {
             build_error!("unspecified file systems cannot safely map folios");
@@ -750,7 +751,10 @@ impl<T: FileSystem + ?Sized> Mapper<T> {
     }
 
     /// Returns a mapped folio at the given offset.
-    pub fn mapped_folio(&self, offset: Offset) -> Result<folio::Mapped<'_, folio::PageCache<T>>> {
+    pub fn mapped_folio(
+        &self,
+        offset: Offset,
+    ) -> Result<Untrusted<folio::Mapped<'_, folio::PageCache<T>>>> {
         if offset < self.begin || offset >= self.end {
             return Err(ERANGE);
         }
@@ -758,7 +762,7 @@ impl<T: FileSystem + ?Sized> Mapper<T> {
         // SAFETY: By the type invariant, there are no other mutable mappings of the folio.
         let mut map = unsafe { self.inode.mapped_folio(offset) }?;
         map.cap_len((self.end - offset).try_into()?);
-        Ok(map)
+        Ok(Untrusted::new_untrusted(map))
     }
 
     /// Iterate over the given range, one folio at a time.
@@ -766,7 +770,7 @@ impl<T: FileSystem + ?Sized> Mapper<T> {
         &self,
         first: Offset,
         len: Offset,
-        cb: impl FnMut(&[u8]) -> Result<Option<U>>,
+        cb: impl FnMut(&Untrusted<[u8]>) -> Result<Option<U>>,
     ) -> Result<Option<U>> {
         if first < self.begin || first >= self.end {
             return Err(ERANGE);
