@@ -9,7 +9,13 @@ use kernel::fs::{
     inode::Type, iomap, sb, sb::SuperBlock, Offset, Stat,
 };
 use kernel::types::{ARef, Either, FromBytes, Locked};
-use kernel::{c_str, prelude::*, str::CString, user};
+use kernel::{
+    c_str,
+    data::{Untrusted, Validator},
+    prelude::*,
+    str::CString,
+    user,
+};
 
 pub mod defs;
 
@@ -29,7 +35,7 @@ const TARFS_MAGIC: usize = 0x54415246;
 
 static_assert!(SECTORS_PER_BLOCK > 0);
 
-struct INodeData {
+pub struct INodeData {
     offset: u64,
     flags: u8,
 }
@@ -39,6 +45,68 @@ struct TarFs {
     inode_table_offset: u64,
     inode_count: u64,
     mapper: inode::Mapper,
+}
+
+impl Validator for Inode {
+    type Input = [u8];
+    type Output = inode::Params<INodeData>;
+    type Err = Error;
+
+    fn validate(untrusted: &Untrusted<Self::Input>) -> Result<Self::Output, Self::Err> {
+        let idata = Inode::from_bytes(untrusted.untrusted(), 0).ok_or(EIO)?;
+
+        let mode = idata.mode.value();
+
+        // Ignore inodes that have unknown mode bits.
+        if (mode & !(fs::mode::S_IFMT | 0o777)) != 0 {
+            return Err(ENOENT);
+        }
+
+        let size = idata.size.value();
+        let doffset = idata.offset.value();
+        let secs = u64::from(idata.lmtime.value()) | (u64::from(idata.hmtime & 0xf) << 32);
+        let ts = kernel::time::Timespec::new(secs, 0)?;
+        let typ = match mode & fs::mode::S_IFMT {
+            fs::mode::S_IFREG => Type::Reg,
+            fs::mode::S_IFDIR => Type::Dir,
+            fs::mode::S_IFLNK => Type::Lnk(None),
+            fs::mode::S_IFSOCK => Type::Sock,
+            fs::mode::S_IFIFO => Type::Fifo,
+            fs::mode::S_IFCHR => Type::Chr((doffset >> 32) as u32, doffset as u32),
+            fs::mode::S_IFBLK => Type::Blk((doffset >> 32) as u32, doffset as u32),
+            _ => return Err(ENOENT),
+        };
+        Ok(inode::Params {
+            typ,
+            mode: mode & 0o777,
+            size: size.try_into()?,
+            blocks: (idata.size.value() + TARFS_BSIZE - 1) / TARFS_BSIZE,
+            nlink: 1,
+            uid: idata.owner.value(),
+            gid: idata.group.value(),
+            ctime: ts,
+            mtime: ts,
+            atime: ts,
+            value: INodeData {
+                offset: doffset,
+                flags: idata.flags,
+            },
+        })
+    }
+}
+
+impl Validator for Header {
+    type Input = [u8];
+    type Output = Self;
+    type Err = Error;
+
+    fn validate(
+        untrusted: &Untrusted<Self::Input>,
+    ) -> core::result::Result<Self::Output, Self::Err> {
+        Header::from_bytes(untrusted.untrusted(), 0)
+            .ok_or(EIO)
+            .cloned()
+    }
 }
 
 impl TarFs {
@@ -60,60 +128,29 @@ impl TarFs {
         // Load inode details from storage.
         let offset = h.inode_table_offset + (ino - 1) * u64::try_from(size_of::<Inode>())?;
         let b = h.mapper.mapped_folio(offset.try_into()?)?;
-        let idata = Inode::from_bytes(&b, 0).ok_or(EIO)?;
-
-        let mode = idata.mode.value();
-
-        // Ignore inodes that have unknown mode bits.
-        if (mode & !(fs::mode::S_IFMT | 0o777)) != 0 {
-            return Err(ENOENT);
-        }
 
         const DIR_FOPS: file::Ops<TarFs> = file::Ops::new::<TarFs>();
         const DIR_IOPS: inode::Ops<TarFs> = inode::Ops::new::<TarFs>();
         const FILE_AOPS: address_space::Ops<TarFs> = iomap::ro_aops::<TarFs>();
 
-        let size = idata.size.value();
-        let doffset = idata.offset.value();
-        let secs = u64::from(idata.lmtime.value()) | (u64::from(idata.hmtime & 0xf) << 32);
-        let ts = kernel::time::Timespec::new(secs, 0)?;
-        let typ = match mode & fs::mode::S_IFMT {
-            fs::mode::S_IFREG => {
+        let mut params = b.deref().validate::<Inode>()?;
+        match &params.typ {
+            Type::Reg => {
                 inode
                     .set_fops(file::Ops::generic_ro_file())
                     .set_aops(FILE_AOPS);
-                Type::Reg
             }
-            fs::mode::S_IFDIR => {
+            Type::Dir => {
                 inode.set_iops(DIR_IOPS).set_fops(DIR_FOPS);
-                Type::Dir
             }
-            fs::mode::S_IFLNK => {
+            Type::Lnk(_) => {
                 inode.set_iops(inode::Ops::simple_symlink_inode());
-                Type::Lnk(Some(Self::get_link(sb, doffset, size)?))
+                let doffset = params.value.offset;
+                params.typ = Type::Lnk(Some(Self::get_link(sb, doffset, params.size as u64)?));
             }
-            fs::mode::S_IFSOCK => Type::Sock,
-            fs::mode::S_IFIFO => Type::Fifo,
-            fs::mode::S_IFCHR => Type::Chr((doffset >> 32) as u32, doffset as u32),
-            fs::mode::S_IFBLK => Type::Blk((doffset >> 32) as u32, doffset as u32),
-            _ => return Err(ENOENT),
-        };
-        inode.init(inode::Params {
-            typ,
-            mode: mode & 0o777,
-            size: size.try_into()?,
-            blocks: (idata.size.value() + TARFS_BSIZE - 1) / TARFS_BSIZE,
-            nlink: 1,
-            uid: idata.owner.value(),
-            gid: idata.group.value(),
-            ctime: ts,
-            mtime: ts,
-            atime: ts,
-            value: INodeData {
-                offset: doffset,
-                flags: idata.flags,
-            },
-        })
+            _ => {}
+        }
+        inode.init(params)
     }
 
     fn name_eq(sb: &SuperBlock<Self>, mut name: &[u8], offset: u64) -> Result<bool> {
@@ -121,7 +158,7 @@ impl TarFs {
             sb.data()
                 .mapper
                 .for_each_page(offset as Offset, name.len().try_into()?, |data| {
-                    if data != &name[..data.len()] {
+                    if data.untrusted() != &name[..data.len()] {
                         return Ok(Some(()));
                     }
                     name = &name[data.len()..];
@@ -135,7 +172,7 @@ impl TarFs {
         sb.data()
             .mapper
             .for_each_page(offset as Offset, name.len().try_into()?, |data| {
-                name[copy_to..][..data.len()].copy_from_slice(data);
+                name[copy_to..][..data.len()].copy_from_slice(data.untrusted());
                 copy_to += data.len();
                 Ok(None::<()>)
             })?;
@@ -179,7 +216,7 @@ impl fs::FileSystem for TarFs {
         let tarfs = {
             let offset = (scount - 1) * SECTOR_SIZE;
             let mapped = mapper.mapped_folio(offset.try_into()?)?;
-            let hdr = Header::from_bytes(&mapped, 0).ok_or(EIO)?;
+            let hdr = mapped.deref().validate::<Header>()?;
             let inode_table_offset = hdr.inode_table_offset.value();
             let inode_count = hdr.inode_count.value();
             drop(mapped);
@@ -316,7 +353,7 @@ impl inode::Operations for TarFs {
             parent.data().offset.try_into()?,
             parent.size(),
             |data| {
-                for e in DirEntry::from_bytes_to_slice(data).ok_or(EIO)? {
+                for e in DirEntry::from_bytes_to_slice(data.untrusted()).ok_or(EIO)? {
                     if Self::name_eq(sb, name, e.name_offset.value())? {
                         return Ok(Some(Self::iget(sb, e.ino.value())?));
                     }
@@ -368,7 +405,7 @@ impl file::Operations for TarFs {
             inode.data().offset as i64 + pos,
             inode.size() - pos,
             |data| {
-                for e in DirEntry::from_bytes_to_slice(data).ok_or(EIO)? {
+                for e in DirEntry::from_bytes_to_slice(data.untrusted()).ok_or(EIO)? {
                     let name_len = usize::try_from(e.name_len.value())?;
                     if name_len > name.len() {
                         name.resize(name_len, 0, GFP_NOFS)?;

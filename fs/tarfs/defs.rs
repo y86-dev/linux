@@ -70,6 +70,7 @@ kernel::derive_readable_from_bytes! {
 
     /// The super-block of a tarfs instance.
     #[repr(C)]
+    #[derive(Clone)]
     pub struct Header {
         /// The offset to the beginning of the inode-table.
         pub inode_table_offset: LE<u64>,
