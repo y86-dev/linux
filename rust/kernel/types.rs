@@ -532,3 +532,225 @@ unsafe impl AsBytes for str {}
 // does not have any uninitialized portions either.
 unsafe impl<T: AsBytes> AsBytes for [T] {}
 unsafe impl<T: AsBytes, const N: usize> AsBytes for [T; N] {}
+
+/// Untrusted data of type `T`.
+///
+/// When reading data from userspace, hardware or other external untrusted sources, the data must
+/// be validated before it is used for logic within the kernel. To do so, the [`validate()`]
+/// function exists and uses the [`Validator`] trait. For raw bytes validation there also is the
+/// [`validate_bytes()`] function.
+///
+///
+/// [`validate()`]: Self::validate
+/// [`validate_bytes()`]: Self::validate_bytes
+#[repr(transparent)]
+pub struct Untrusted<T: ?Sized>(T);
+
+impl<T: ?Sized> Untrusted<T> {
+    /// Marks the given value as untrusted.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # mod bindings { unsafe fn read_foo_info() -> [u8; 4] { todo!() } };
+    /// fn read_foo_info() -> Untrusted<[u8; 4]> {
+    ///     // SAFETY: just an FFI call without preconditions.
+    ///     Untrusted::new_untrusted(unsafe { bindings::read_foo_info() })
+    /// }
+    /// ```
+    pub fn new_untrusted(value: T) -> Self
+    where
+        T: Sized,
+    {
+        Self(value)
+    }
+
+    /// Marks the value behind the reference as untrusted.
+    ///
+    /// # Examples
+    ///
+    /// In this imaginary example there exists the `foo_hardware` struct on the C side, as well as
+    /// a `foo_hardware_read` function that reads some data directly from the hardware.
+    /// ```
+    /// # mod bindings { struct foo_hardware; unsafe fn foo_hardware_read(_foo: *mut Foo, _len: &mut usize) -> *mut u8 { todo!() } };
+    /// struct Foo(Opaque<bindings::foo_hardware>);
+    ///
+    /// impl Foo {
+    ///     pub fn read(&mut self, mut len: usize) -> Result<&Untrusted<[u8]>> {
+    ///         // SAFETY: just an FFI call without preconditions.
+    ///         let data: *mut u8 = unsafe { bindings::foo_hardware_read(self.0.get(), &mut len) };
+    ///         let data = error::from_err_ptr(data)?;
+    ///         let data = ptr::slice_from_raw_parts(data, len);
+    ///         // SAFETY: `data` returned by `foo_hardware_read` is valid for reads as long as the
+    ///         // `foo_hardware` object exists. That function updated the
+    ///         let data = unsafe { &*data };
+    ///         Ok(Untrusted::new_untrusted_ref(data))
+    ///     }
+    /// }
+    /// ```
+    pub fn new_untrusted_ref<'a>(value: &'a T) -> &'a Self {
+        let ptr: *const T = value;
+        // CAST: `Self` is `repr(transparent)` and contains a `T`.
+        let ptr = ptr as *const Self;
+        // SAFETY: `ptr` came from a shared reference valid for `'a`.
+        unsafe { &*ptr }
+    }
+
+    /// Gives direct access to the underlying untrusted data.
+    ///
+    /// Be careful when accessing the data, as it is untrusted and still needs to be verified! To
+    /// do so use [`validate()`].
+    ///
+    /// [`validate()`]: Self::validate
+    pub fn untrusted(&self) -> &T {
+        &self.0
+    }
+
+    /// Dereferences the underlying untrusted data.
+    ///
+    /// Often, untrusted data is not directly exposed as bytes, but rather as a reader that can
+    /// give you access to raw bytes. When such a type implements [`Deref`], then this function
+    /// allows you to get access to the underlying data.
+    pub fn deref(&self) -> &Untrusted<<T as Deref>::Target>
+    where
+        T: Deref,
+    {
+        Untrusted::new_untrusted_ref(self.0.deref())
+    }
+
+    /// Validates and parses the untrusted data.
+    ///
+    /// See the [`Validator`] trait on how to implement it.
+    pub fn validate<V: Validator<Input = T>>(&self) -> Result<V::Output, V::Err> {
+        V::validate(self)
+    }
+}
+
+impl Untrusted<[u8]> {
+    /// Validate the given bytes directly.
+    ///
+    /// This is a convenience method to not have to implement the [`Validator`] trait to be able to
+    /// just parse some bytes. If the bytes that you are validating have some structure and/or you
+    /// will parse it into a `struct` or other rust type, then it is very much recommended to use
+    /// the [`Validator`] trait and the [`validate()`] function instead.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # fn get_untrusted_data() -> &'static Untrusted<[u8]> { &[0; 8] }
+    ///
+    /// let data: &Untrusted<[u8]> = get_untrusted_data();
+    /// let data: Result<&[u8], ()> = data.validate_bytes::<()>(|untrusted| {
+    ///     if untrusted.len() != 2 {
+    ///         return Err(());
+    ///     }
+    ///     if untrusted[0] & 0xf0 != 0 {
+    ///         return Err(());
+    ///     }
+    ///     if untrusted[1] >= 100 {
+    ///         return Err(());
+    ///     }
+    ///     Ok(())
+    /// });
+    /// match data {
+    ///     Ok(data) => pr_info!("successfully validated the data: {data}"),
+    ///     Err(()) => pr_info!("read faulty data from hardware!"),
+    /// }
+    /// ```
+    ///
+    /// [`validate()`]: Self::validate
+    pub fn validate_bytes<E>(
+        &self,
+        validator: impl FnOnce(&[u8]) -> Result<(), E>,
+    ) -> Result<&[u8], E> {
+        let raw_data = self.untrusted();
+        validator(raw_data).map(|()| raw_data)
+    }
+}
+
+impl<T, I> Index<I> for Untrusted<[T]>
+where
+    I: SliceIndex<[T]>,
+{
+    type Output = Untrusted<I::Output>;
+
+    fn index(&self, index: I) -> &Self::Output {
+        Untrusted::new_untrusted_ref(self.0.index(index))
+    }
+}
+
+impl<T> Untrusted<[T]> {
+    /// Gets the length of the underlying untrusted slice.
+    pub fn len(&self) -> usize {
+        self.len()
+    }
+}
+
+/// Validates untrusted data.
+///
+/// # Examples
+///
+/// ## Using an API returning untrusted data
+///
+/// Create the type of the data that you want to parse:
+///
+/// ```
+/// pub struct FooData {
+///     data: [u8; 4],
+/// }
+/// ```
+///
+/// Then implement this trait:
+///
+/// ```
+/// use kernel::types::{Untrusted, Validator};
+/// # pub struct FooData {
+/// #     data: [u8; 4],
+/// # }
+/// impl Validator for FooData {
+///     type Input = [u8];
+///     type Output = FooData;
+///     type Err = Error;
+///
+///     fn validate(untrusted: &Untrusted<Self::Input>) -> Result<Self::Output, Self::Err> {
+///         let untrusted = untrusted.untrusted();
+///         let untrusted = <[u8; 4]>::try_from(untrusted);
+///         for byte in &untrusted {
+///             if byte & 0xf0 != 0 {
+///                 return Err(());
+///             }
+///         }
+///         Ok(FooData { data: untrusted })
+///     }
+/// }
+/// ```
+///
+/// And then use the API that returns untrusted data:
+///
+/// ```ignore
+/// let result = get_untrusted_data().validate::<FooData>();
+/// ```
+///
+/// ## Creating an API returning untrusted data
+///
+/// In your API instead of just returning the untrusted data, wrap it in [`Untrusted<T>`]:
+///
+/// ```
+/// pub fn get_untrusted_data(&self) -> &Untrusted<[u8]> {
+///     todo!()
+/// }
+/// ```
+pub trait Validator {
+    /// Type of the input data that is untrusted.
+    type Input: ?Sized;
+    /// Type of the validated data.
+    type Output;
+    /// Validation error.
+    type Err;
+
+    /// Validate the given untrusted data and parse it into the output type.
+    ///
+    /// When implementing this function, you can use [`Untrusted::untrusted()`] to get access to
+    /// the raw untrusted data.
+    fn validate(untrusted: &Untrusted<Self::Input>) -> Result<Self::Output, Self::Err>;
+}
