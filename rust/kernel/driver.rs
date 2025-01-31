@@ -6,9 +6,9 @@
 //! register using the [`Registration`] class.
 
 use crate::error::{Error, Result};
-use crate::{device, init::PinInit, of, str::CStr, try_pin_init, types::Opaque, ThisModule};
+use crate::{device, of, str::CStr, try_pin_init, types::Opaque, ThisModule};
 use core::pin::Pin;
-use macros::{pin_data, pinned_drop};
+use pin_init::{pin_data, pinned_drop, PinInit};
 
 /// The [`RegistrationOps`] trait serves as generic interface for subsystems (e.g., PCI, Platform,
 /// Amba, etc.) to provide the corresponding subsystem specific implementation to register /
