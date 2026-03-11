@@ -1141,10 +1141,6 @@ macro_rules! __init_internal {
         @construct_closure($construct_closure:ident),
         @zeroed($($init_zeroed:expr)?),
     ) => {{
-        // We do not want to allow arbitrary returns, so we declare this type as the `Ok` return
-        // type and shadow it later when we insert the arbitrary user code. That way there will be
-        // no possibility of returning without `unsafe`.
-        struct __InitOk;
         // Get the data about fields from the supplied type.
         //
         // SAFETY: TODO.
@@ -1157,47 +1153,33 @@ macro_rules! __init_internal {
             ::kernel::macros::paste!($t::$get_data())
         };
         // Ensure that `data` really is of type `$data` and help with type inference:
-        let init = $crate::init::__internal::$data::make_closure::<_, __InitOk, $err>(
+        let init = $crate::init::__internal::$data::make_closure::<_, $err>(
             data,
             move |slot| {
-                {
-                    // Shadow the structure so it cannot be used to return early.
-                    struct __InitOk;
-                    // If `$init_zeroed` is present we should zero the slot now and not emit an
-                    // error when fields are missing (since they will be zeroed). We also have to
-                    // check that the type actually implements `Zeroable`.
-                    $({
-                        fn assert_zeroable<T: $crate::init::Zeroable>(_: *mut T) {}
-                        // Ensure that the struct is indeed `Zeroable`.
-                        assert_zeroable(slot);
-                        // SAFETY: The type implements `Zeroable` by the check above.
-                        unsafe { ::core::ptr::write_bytes(slot, 0, 1) };
-                        $init_zeroed // This will be `()` if set.
-                    })?
-                    // Create the `this` so it can be referenced by the user inside of the
-                    // expressions creating the individual fields.
-                    $(let $this = unsafe { ::core::ptr::NonNull::new_unchecked(slot) };)?
-                    // Initialize every field.
-                    $crate::__init_internal!(init_slot($($use_data)?):
-                        @data(data),
-                        @slot(slot),
-                        @guards(),
-                        @munch_fields($($fields)*,),
-                    );
-                    // We use unreachable code to ensure that all fields have been mentioned exactly
-                    // once, this struct initializer will still be type-checked and complain with a
-                    // very natural error message if a field is forgotten/mentioned more than once.
-                    #[allow(unreachable_code, clippy::diverging_sub_expression)]
-                    let _ = || {
-                        $crate::__init_internal!(make_initializer:
-                            @slot(slot),
-                            @type_name($t),
-                            @munch_fields($($fields)*,),
-                            @acc(),
-                        );
-                    };
-                }
-                Ok(__InitOk)
+                // If `$init_zeroed` is present we should zero the slot now and not emit an
+                // error when fields are missing (since they will be zeroed). We also have to
+                // check that the type actually implements `Zeroable`.
+                $({
+                    fn assert_zeroable<T: $crate::init::Zeroable>(_: *mut T) {}
+                    // Ensure that the struct is indeed `Zeroable`.
+                    assert_zeroable(slot);
+                    // SAFETY: The type implements `Zeroable` by the check above.
+                    unsafe { ::core::ptr::write_bytes(slot, 0, 1) };
+                    $init_zeroed // This will be `()` if set.
+                })?
+                // Create the `this` so it can be referenced by the user inside of the
+                // expressions creating the individual fields.
+                $(let $this = unsafe { ::core::ptr::NonNull::new_unchecked(slot) };)?
+                // Initialize every field.
+                $crate::__init_internal!(init_slot($($use_data)?):
+                    @data(data),
+                    @slot(slot),
+                    @type_name($t),
+                    @munch_fields($($fields)*,),
+                    @acc(),
+                );
+                // SAFETY: we are the `__init_internal!` macro that is allowed to call this.
+                Ok(unsafe { $crate::init::__internal::InitOk::new() })
             }
         );
         let init = move |slot| -> ::core::result::Result<(), $err> {
